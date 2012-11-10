@@ -28,7 +28,7 @@
 
 PyObject *
 g_variant_to_arg (PyObject        *value,
-                  GIInterfaceInfo *type_info,
+                  GIInterfaceInfo *interface_info,
                   GITransfer       transfer,
                   GIArgument      *arg)
 {
@@ -41,11 +41,12 @@ g_variant_to_arg (PyObject        *value,
 }
 
 PyObject *
-g_variant_from_arg (GIInterfaceInfo *iface_info,
+g_variant_from_arg (GIInterfaceInfo *interface_info,
                     gpointer         data)
 {
     GVariant *variant = (GVariant *) data;
-    PyObject *type = _pygi_type_import_by_gi_info (iface_info);
+
+    PyObject *type = _pygi_type_import_by_gi_info (interface_info);
 
     g_variant_ref_sink (variant);
 
@@ -54,7 +55,7 @@ g_variant_from_arg (GIInterfaceInfo *iface_info,
 
 PyObject *
 g_variant_release_foreign (GIBaseInfo *base_info,
-                           gpointer    struct_)
+                           gpointer struct_)
 {
     g_variant_unref ( (GVariant *) struct_);
     Py_RETURN_NONE;

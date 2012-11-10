@@ -30,6 +30,12 @@ G_BEGIN_DECLS
 
 
 /* Private */
+gpointer _pygi_arg_to_hash_pointer (const GIArgument *arg,
+                                    GITypeTag         type_tag);
+
+void _pygi_hash_pointer_to_arg (GIArgument *arg,
+                                GITypeTag   type_tag);
+
 gint _pygi_g_type_interface_check_object (GIBaseInfo *info,
                                           PyObject   *object);
 
@@ -44,8 +50,9 @@ gint _pygi_g_registered_type_info_check_object (GIRegisteredTypeInfo *info,
 
 GArray* _pygi_argument_to_array (GIArgument  *arg,
                                  GIArgument  *args[],
-                                 GITypeInfo *type_info,
-                                 gboolean    is_method);
+                                 GICallableInfo *callable_info,
+                                 GITypeInfo  *type_info,
+                                 gboolean    *out_free_array);
 
 GIArgument _pygi_argument_from_object (PyObject   *object,
                                       GITypeInfo *type_info,

@@ -24,10 +24,8 @@ from __future__ import absolute_import
 import logging
 import sys
 
-import gobject
-
-from ._gi import Repository, RepositoryError
-from .module import DynamicModule, DynamicGObjectModule
+from ._gi import Repository
+from .module import DynamicModule, DynamicGObjectModule, DynamicGLibModule
 
 
 repository = Repository.get_default()
@@ -61,12 +59,14 @@ class DynamicImporter(object):
 
         path, namespace = fullname.rsplit('.', 1)
 
-        # Workaround for GObject
+        # Special case GObject and GLib
         if namespace == 'GObject':
-            sys.modules[fullname] = DynamicGObjectModule()
-            return sys.modules[fullname]
+            dynamic_module = DynamicGObjectModule()
+        elif namespace == "GLib":
+            dynamic_module = DynamicGLibModule()
+        else:
+            dynamic_module = DynamicModule(namespace)
 
-        dynamic_module = DynamicModule(namespace)
         modules[namespace] = dynamic_module
 
         dynamic_module.__file__ = '<%s>' % fullname
@@ -76,4 +76,3 @@ class DynamicImporter(object):
         dynamic_module._load()
 
         return dynamic_module
-

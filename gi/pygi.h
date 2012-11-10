@@ -29,9 +29,8 @@
 #define NO_IMPORT_PYGOBJECT
 #include <pygobject.h>
 
-#if ENABLE_INTROSPECTION
-
 #include <girepository.h>
+#include "pygi-cache.h"
 
 typedef struct {
     PyObject_HEAD
@@ -42,6 +41,7 @@ typedef struct {
     PyObject_HEAD
     GIBaseInfo *info;
     PyObject *inst_weakreflist;
+    PyGICallableCache *cache;
 } PyGIBaseInfo;
 
 typedef struct {
@@ -55,12 +55,22 @@ typedef struct {
     gsize size;
 } PyGIBoxed;
 
-typedef PyObject * (*PyGIArgOverrideToGIArgumentFunc) (PyObject       *value,
-                                                      GITypeInfo     *type_info,
-                                                      GITransfer      transfer,
-                                                      GIArgument      *arg);
-typedef PyObject * (*PyGIArgOverrideFromGIArgumentFunc) (GITypeInfo *type_info,
-                                                         gpointer    data);
+typedef struct {
+    PyObject_HEAD
+    GCallback callback;
+    GIFunctionInfo *info;
+    gpointer user_data;
+    GIScopeType scope;
+    GDestroyNotify destroy_notify_func;
+    PyGICallableCache *cache;
+} PyGICCallback;
+
+typedef PyObject * (*PyGIArgOverrideToGIArgumentFunc) (PyObject        *value,
+                                                       GIInterfaceInfo *interface_info,
+                                                       GITransfer       transfer,
+                                                       GIArgument      *arg);
+typedef PyObject * (*PyGIArgOverrideFromGIArgumentFunc) (GIInterfaceInfo *interface_info,
+                                                         gpointer         data);
 typedef PyObject * (*PyGIArgOverrideReleaseFunc) (GITypeInfo *type_info,
                                                   gpointer  struct_);
 
@@ -88,20 +98,14 @@ static struct PyGI_API *PyGI_API = NULL;
 static int
 _pygi_import (void)
 {
-    PyObject *modules_dict;
-
     if (PyGI_API != NULL) {
         return 1;
     }
-
-    modules_dict = PyImport_GetModuleDict(); /* borrowed reference -- don't unref */
-    if (PyMapping_HasKeyString(modules_dict, "gi")) {
 #if PY_VERSION_HEX >= 0x03000000
-        PyGI_API = (struct PyGI_API*) PyCapsule_Import("gi._API", FALSE);
+    PyGI_API = (struct PyGI_API*) PyCapsule_Import("gi._API", FALSE);
 #else
-        PyGI_API = (struct PyGI_API*) PyCObject_Import("gi", "_API");
+    PyGI_API = (struct PyGI_API*) PyCObject_Import("gi", "_API");
 #endif
-    }
     if (PyGI_API == NULL) {
         return -1;
     }
@@ -169,40 +173,5 @@ pygi_register_foreign_struct (const char* namespace_,
                                       release_func);
     Py_RETURN_NONE;
 }
-
-#else /* ENABLE_INTROSPECTION */
-
-static inline PyObject *
-pygi_type_import_by_g_type (GType g_type)
-{
-    return NULL;
-}
-
-static inline PyObject *
-pygi_get_property_value (PyGObject *instance,
-                         const gchar *attr_name)
-{
-    return NULL;
-}
-
-static inline gint
-pygi_set_property_value (PyGObject *instance,
-                         const gchar *attr_name,
-                         PyObject *value)
-{
-    return -1;
-}
-
-static inline GClosure *
-pygi_signal_closure_new (PyGObject *instance,
-                         const gchar *sig_name,
-                         PyObject *callback,
-                         PyObject *extra_args,
-                         PyObject *swap_data)
-{
-    return NULL;
-}
-
-#endif /* ENABLE_INTROSPECTION */
 
 #endif /* __PYGI_H__ */

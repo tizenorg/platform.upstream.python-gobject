@@ -45,12 +45,12 @@ _pygobject_import (void)
         return 1;
     }
 
-    from_list = Py_BuildValue ("(ss)", "GObject", "GTypeWrapper");
+    from_list = Py_BuildValue ("(ss)", "GObject", "GType");
     if (from_list == NULL) {
         return -1;
     }
 
-    module = PyImport_ImportModuleEx ("gobject", NULL, NULL, from_list);
+    module = PyImport_ImportModuleEx ("gi._gobject", NULL, NULL, from_list);
 
     Py_DECREF (from_list);
 

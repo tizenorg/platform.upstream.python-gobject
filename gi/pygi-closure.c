@@ -28,6 +28,57 @@
 static GSList* async_free_list;
 
 static void
+_pygi_closure_assign_pyobj_to_retval (gpointer retval, PyObject *object,
+                                      GITypeInfo *type_info,
+                                      GITransfer transfer)
+{
+    GIArgument arg = _pygi_argument_from_object (object, type_info, transfer);
+    GITypeTag type_tag = g_type_info_get_tag (type_info);
+
+    if (retval == NULL)
+        return;
+
+    switch (type_tag) {
+        case GI_TYPE_TAG_BOOLEAN:
+           *((ffi_sarg *) retval) = arg.v_boolean;
+           break;
+        case GI_TYPE_TAG_INT8:
+           *((ffi_sarg *) retval) = arg.v_int8;
+           break;
+        case GI_TYPE_TAG_UINT8:
+           *((ffi_arg *) retval) = arg.v_uint8;
+           break;
+        case GI_TYPE_TAG_INT16:
+           *((ffi_sarg *) retval) = arg.v_int16;
+           break;
+        case GI_TYPE_TAG_UINT16:
+           *((ffi_arg *) retval) = arg.v_uint16;
+           break;
+        case GI_TYPE_TAG_INT32:
+           *((ffi_sarg *) retval) = arg.v_int32;
+           break;
+        case GI_TYPE_TAG_UINT32:
+           *((ffi_arg *) retval) = arg.v_uint32;
+           break;
+        case GI_TYPE_TAG_INT64:
+           *((ffi_sarg *) retval) = arg.v_int64;
+           break;
+        case GI_TYPE_TAG_UINT64:
+           *((ffi_arg *) retval) = arg.v_uint64;
+           break;
+        case GI_TYPE_TAG_FLOAT:
+           *((gfloat *) retval) = arg.v_float;
+           break;
+        case GI_TYPE_TAG_DOUBLE:
+           *((gdouble *) retval) = arg.v_double;
+           break;
+        default:
+           *((GIArgument *) retval) = arg;
+           break;
+      }
+}
+
+static void
 _pygi_closure_assign_pyobj_to_out_argument (gpointer out_arg, PyObject *object,
                                             GITypeInfo *type_info,
                                             GITransfer transfer)
@@ -72,6 +123,27 @@ _pygi_closure_assign_pyobj_to_out_argument (gpointer out_arg, PyObject *object,
         case GI_TYPE_TAG_DOUBLE:
            *((gdouble *) out_arg) = arg.v_double;
            break;
+        case GI_TYPE_TAG_INTERFACE:
+        {
+           GIBaseInfo *interface;
+           GIInfoType interface_type;
+
+           interface = g_type_info_get_interface (type_info);
+           interface_type = g_base_info_get_type (interface);
+
+           if (!g_type_info_is_pointer (type_info) &&
+               interface_type == GI_INFO_TYPE_STRUCT) {
+               if (object == Py_None) {
+                   arg.v_pointer = NULL;
+               } else {
+                   gsize item_size = _pygi_g_type_info_size (type_info);
+                   memcpy (out_arg, arg.v_pointer, item_size);
+               }
+               break;
+           }
+        }
+
+        /* Fall through */
         default:
            *((GIArgument *) out_arg) = arg;
            break;
@@ -155,7 +227,8 @@ _pygi_closure_convert_ffi_arguments (GICallableInfo *callable_info, void **args)
                         g_args[i].v_double = * (double *) args[i];
                         g_base_info_unref (interface);
                         break;
-                    } else if (interface_type == GI_INFO_TYPE_STRUCT) {
+                    } else if (interface_type == GI_INFO_TYPE_STRUCT ||
+                               interface_type == GI_INFO_TYPE_CALLBACK) {
                         g_args[i].v_pointer = * (gpointer *) args[i];
                         g_base_info_unref (interface);
                         break;
@@ -163,11 +236,16 @@ _pygi_closure_convert_ffi_arguments (GICallableInfo *callable_info, void **args)
 
                     g_base_info_unref (interface);
                 }
+                case GI_TYPE_TAG_ERROR:
+                case GI_TYPE_TAG_GHASH:
                 case GI_TYPE_TAG_GLIST:
                 case GI_TYPE_TAG_GSLIST:
+                case GI_TYPE_TAG_ARRAY:
+                case GI_TYPE_TAG_VOID:
                     g_args[i].v_pointer = * (gpointer *) args[i];
                     break;
                 default:
+                    g_warning ("Unhandled type tag %s", g_type_tag_to_string (tag));
                     g_args[i].v_pointer = 0;
             }
         }
@@ -186,6 +264,9 @@ _pygi_closure_convert_arguments (GICallableInfo *callable_info, void **args,
     int n_in_args = 0;
     int n_out_args = 0;
     int i;
+    int user_data_arg = -1;
+    int destroy_notify_arg = -1;
+
     GIArgument *g_args = NULL;
 
     *py_args = NULL;
@@ -198,6 +279,10 @@ _pygi_closure_convert_arguments (GICallableInfo *callable_info, void **args,
     g_args = _pygi_closure_convert_ffi_arguments (callable_info, args);
 
     for (i = 0; i < n_args; i++) {
+        /* Special case callbacks and skip over userdata and Destroy Notify */
+        if (i == user_data_arg || i == destroy_notify_arg)
+            continue;
+
         GIArgInfo *arg_info = g_callable_info_get_arg (callable_info, i);
         GIDirection direction = g_arg_info_get_direction (arg_info);
 
@@ -207,6 +292,7 @@ _pygi_closure_convert_arguments (GICallableInfo *callable_info, void **args,
             GITransfer transfer = g_arg_info_get_ownership_transfer (arg_info);
             PyObject *value;
             GIArgument *arg;
+            gboolean free_array = FALSE;
 
             if (direction == GI_DIRECTION_IN && arg_tag == GI_TYPE_TAG_VOID &&
                     g_type_info_is_pointer (arg_type)) {
@@ -218,13 +304,60 @@ _pygi_closure_convert_arguments (GICallableInfo *callable_info, void **args,
                     value = user_data;
                     Py_INCREF (value);
                 }
+            } else if (direction == GI_DIRECTION_IN &&
+                       arg_tag == GI_TYPE_TAG_INTERFACE) {
+                /* Handle callbacks as a special case */
+                GIBaseInfo *info;
+                GIInfoType info_type;
+
+                info = g_type_info_get_interface (arg_type);
+                info_type = g_base_info_get_type (info);
+
+                arg = (GIArgument*) &g_args[i];
+
+                if (info_type == GI_INFO_TYPE_CALLBACK) {
+                    gpointer user_data = NULL;
+                    GDestroyNotify destroy_notify = NULL;
+                    GIScopeType scope = g_arg_info_get_scope(arg_info);
+
+                    user_data_arg = g_arg_info_get_closure(arg_info);
+                    destroy_notify_arg = g_arg_info_get_destroy(arg_info);
+
+                    if (user_data_arg != -1)
+                        user_data = g_args[user_data_arg].v_pointer;
+
+                    if (destroy_notify_arg != -1)
+                        user_data = (GDestroyNotify) g_args[destroy_notify_arg].v_pointer;
+
+                    value = _pygi_ccallback_new(arg->v_pointer,
+                                                user_data,
+                                                scope,
+                                                (GIFunctionInfo *) info,
+                                                destroy_notify);
+                } else
+                    value = _pygi_argument_to_object (arg, arg_type, transfer);
+
+                g_base_info_unref (info);
+                if (value == NULL) {
+                    g_base_info_unref (arg_type);
+                    g_base_info_unref (arg_info);
+                    goto error;
+                }
             } else {
                 if (direction == GI_DIRECTION_IN)
                     arg = (GIArgument*) &g_args[i];
                 else
                     arg = (GIArgument*) g_args[i].v_pointer;
+                
+                if (g_type_info_get_tag (arg_type) == GI_TYPE_TAG_ARRAY)
+                    arg->v_pointer = _pygi_argument_to_array (arg, (GIArgument **) args, 
+                                                              callable_info, arg_type, &free_array);
 
                 value = _pygi_argument_to_object (arg, arg_type, transfer);
+                
+                if (free_array)
+                    g_array_free (arg->v_pointer, FALSE);
+                
                 if (value == NULL) {
                     g_base_info_unref (arg_type);
                     g_base_info_unref (arg_info);
@@ -276,10 +409,10 @@ _pygi_closure_set_out_arguments (GICallableInfo *callable_info,
         GITransfer transfer = g_callable_info_get_caller_owns (callable_info);
         if (PyTuple_Check (py_retval)) {
             PyObject *item = PyTuple_GET_ITEM (py_retval, 0);
-            _pygi_closure_assign_pyobj_to_out_argument (resp, item,
+            _pygi_closure_assign_pyobj_to_retval (resp, item,
                 return_type_info, transfer);
         } else {
-            _pygi_closure_assign_pyobj_to_out_argument (resp, py_retval,
+            _pygi_closure_assign_pyobj_to_retval (resp, py_retval,
                 return_type_info, transfer);
         }
         i_py_retval++;
@@ -330,9 +463,6 @@ _pygi_closure_handle (ffi_cif *cif,
 {
     PyGILState_STATE state;
     PyGICClosure *closure = data;
-    GITypeTag  return_tag;
-    GITransfer return_transfer;
-    GITypeInfo *return_type;
     PyObject *retval;
     PyObject *py_args;
     GIArgument *out_args = NULL;
@@ -340,10 +470,6 @@ _pygi_closure_handle (ffi_cif *cif,
     /* Lock the GIL as we are coming into this code without the lock and we
       may be executing python code */
     state = PyGILState_Ensure();
-
-    return_type = g_callable_info_get_return_type (closure->info);
-    return_tag = g_type_info_get_tag (return_type);
-    return_transfer = g_callable_info_get_caller_owns (closure->info);
 
     if (!_pygi_closure_convert_arguments ( (GICallableInfo *) closure->info, args,
                                            closure->user_data,
@@ -365,7 +491,6 @@ _pygi_closure_handle (ffi_cif *cif,
 
 end:
     g_free (out_args);
-    g_base_info_unref ( (GIBaseInfo*) return_type);
 
     PyGILState_Release (state);
 
@@ -392,8 +517,10 @@ end:
 
 void _pygi_invoke_closure_free (gpointer data)
 {
+    PyGILState_STATE state;
     PyGICClosure* invoke_closure = (PyGICClosure *) data;
 
+    state = PyGILState_Ensure();
     Py_DECREF (invoke_closure->function);
 
     g_callable_info_free_closure (invoke_closure->info,
@@ -403,6 +530,7 @@ void _pygi_invoke_closure_free (gpointer data)
         g_base_info_unref ( (GIBaseInfo*) invoke_closure->info);
 
     Py_XDECREF (invoke_closure->user_data);
+    PyGILState_Release (state);
 
     g_slice_free (PyGICClosure, invoke_closure);
 }
@@ -418,8 +546,7 @@ _pygi_make_native_closure (GICallableInfo* info,
     ffi_closure *fficlosure;
 
     /* Begin by cleaning up old async functions */
-    g_slist_foreach (async_free_list, (GFunc) _pygi_invoke_closure_free, NULL);
-    g_slist_free (async_free_list);
+    g_slist_free_full (async_free_list, (GDestroyNotify) _pygi_invoke_closure_free);
     async_free_list = NULL;
 
     /* Build the closure itself */

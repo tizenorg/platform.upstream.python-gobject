@@ -6,22 +6,23 @@ import sys
 # py3k has StringIO in a different module
 try:
     from StringIO import StringIO
+    StringIO  # pyflakes
 except ImportError:
     from io import StringIO
 
-from glib.option import OptionParser, OptionGroup, OptionValueError, \
-     make_option, BadOptionError
+# FIXME: we need a way to import the options module from a public module
+from gi._glib.option import OptionParser, OptionGroup, OptionValueError, \
+    make_option, BadOptionError
 
-from compathelper import _bytes
 
 class TestOption(unittest.TestCase):
     EXCEPTION_MESSAGE = "This callback fails"
 
     def setUp(self):
         self.parser = OptionParser("NAMES...",
-                                     description="Option unit test")
+                                   description="Option unit test")
         self.parser.add_option("-t", "--test", help="Unit test option",
-                          action="store_false", dest="test", default=True)
+                               action="store_false", dest="test", default=True)
         self.parser.add_option("--g-fatal-warnings",
                                action="store_true",
                                dest="fatal_warnings",
@@ -33,20 +34,20 @@ class TestOption(unittest.TestCase):
 
         group = OptionGroup(
             "unittest", "Unit test options", "Show all unittest options",
-            option_list = [
+            option_list=[
                 make_option("-f", "-u", "--file", "--unit-file",
-                                   type="filename",
-                                   dest="unit_file",
-                                   help="Unit test option"),
+                            type="filename",
+                            dest="unit_file",
+                            help="Unit test option"),
                 make_option("--test-integer",
-                                   type="int",
-                                   dest="test_integer",
-                                   help="Unit integer option"),
+                            type="int",
+                            dest="test_integer",
+                            help="Unit integer option"),
                 make_option("--callback-failure-test",
-                                   action="callback",
-                                   callback=option_callback,
-                                   dest="test_integer",
-                                   help="Unit integer option"),
+                            action="callback",
+                            callback=option_callback,
+                            dest="test_integer",
+                            help="Unit integer option"),
             ])
         group.add_option("-t", "--test",
                          action="store_false",
@@ -59,23 +60,20 @@ class TestOption(unittest.TestCase):
     def testParseArgs(self):
         options, args = self.parser.parse_args(
             ["test_option.py"])
-        self.failIf(args)
+        self.assertFalse(args)
 
         options, args = self.parser.parse_args(
             ["test_option.py", "foo"])
-        self.assertEquals(args, ["foo"])
+        self.assertEqual(args, [])
 
         options, args = self.parser.parse_args(
             ["test_option.py", "foo", "bar"])
-        self.assertEquals(args, ["foo", "bar"])
+        self.assertEqual(args, [])
 
     def testParseArgsDoubleDash(self):
         options, args = self.parser.parse_args(
             ["test_option.py", "--", "-xxx"])
-        #self.assertEquals(args, ["-xxx"])
-
-    def testParseArgs(self):
-        options, args = self.parser.parse_args()
+        #self.assertEqual(args, ["-xxx"])
 
     def testParseArgsGroup(self):
         group = self._create_group()
@@ -83,13 +81,13 @@ class TestOption(unittest.TestCase):
         options, args = self.parser.parse_args(
             ["test_option.py", "--test", "-f", "test"])
 
-        self.failIf(options.test)
+        self.assertFalse(options.test)
         self.assertEqual(options.unit_file, "test")
 
-        self.failUnless(group.values.test)
-        self.failIf(self.parser.values.test)
+        self.assertTrue(group.values.test)
+        self.assertFalse(self.parser.values.test)
         self.assertEqual(group.values.unit_file, "test")
-        self.failIf(args)
+        self.assertFalse(args)
 
     def testOptionValueError(self):
         self._create_group()
@@ -117,4 +115,3 @@ class TestOption(unittest.TestCase):
 
         assert (sio.getvalue().split('\n')[-2] ==
                 "Exception: " + self.EXCEPTION_MESSAGE)
-

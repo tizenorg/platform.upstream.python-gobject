@@ -41,7 +41,7 @@ typedef struct {
 
 static GPtrArray *foreign_structs = NULL;
 
-void
+static void
 init_foreign_structs ()
 {
     foreign_structs = g_ptr_array_new ();
@@ -108,33 +108,36 @@ pygi_struct_foreign_lookup (GIBaseInfo *base_info)
 
 PyObject *
 pygi_struct_foreign_convert_to_g_argument (PyObject        *value,
-                                           GIInterfaceInfo *iface_info,
+                                           GIInterfaceInfo *interface_info,
                                            GITransfer       transfer,
                                            GIArgument      *arg)
 {
-    GIBaseInfo *base_info = (GIBaseInfo *) iface_info;
+    PyObject *result;
+
+    GIBaseInfo *base_info = (GIBaseInfo *) interface_info;
     PyGIForeignStruct *foreign_struct = pygi_struct_foreign_lookup (base_info);
 
-    if (foreign_struct == NULL)
-        return NULL;
+    if (foreign_struct == NULL) {
+        PyErr_Format(PyExc_KeyError, "could not find foreign type %s",
+                     g_base_info_get_name (base_info));
+        return FALSE;
+    }
 
-    if (!foreign_struct->to_func (value, iface_info, transfer, arg))
-        return NULL;
-
-    Py_RETURN_NONE;
+    result = foreign_struct->to_func (value, interface_info, transfer, arg);
+    return result;
 }
 
 PyObject *
-pygi_struct_foreign_convert_from_g_argument (GIInterfaceInfo *iface_info,
+pygi_struct_foreign_convert_from_g_argument (GIInterfaceInfo *interface_info,
                                              GIArgument      *arg)
 {
-    GIBaseInfo *base_info = (GIBaseInfo *) iface_info;
+    GIBaseInfo *base_info = (GIBaseInfo *) interface_info;
     PyGIForeignStruct *foreign_struct = pygi_struct_foreign_lookup (base_info);
 
     if (foreign_struct == NULL)
         return NULL;
 
-    return foreign_struct->from_func (iface_info, arg);
+    return foreign_struct->from_func (interface_info, arg);
 }
 
 PyObject *
@@ -149,10 +152,7 @@ pygi_struct_foreign_release (GIBaseInfo *base_info,
     if (!foreign_struct->release_func)
         Py_RETURN_NONE;
 
-    if (!foreign_struct->release_func (base_info, struct_))
-        return NULL;
-
-    Py_RETURN_NONE;
+    return foreign_struct->release_func (base_info, struct_);
 }
 
 void

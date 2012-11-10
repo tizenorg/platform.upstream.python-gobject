@@ -1,13 +1,7 @@
 /* config.h.in.  Generated from configure.ac by autoheader.  */
 
-/* Use introspection information */
-#undef ENABLE_INTROSPECTION
-
 /* Define to 1 if you have the <dlfcn.h> header file. */
 #undef HAVE_DLFCN_H
-
-/* Have libffi include files */
-#undef HAVE_FFI_H
 
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H

@@ -14,7 +14,7 @@ static PyObject * _wrap_TestInterface__do_iface_method(PyObject *cls,
 						       PyObject *args,
 						       PyObject *kwargs);
 
-GType
+static GType
 test_type_get_type(void)
 {
     static GType gtype = 0;
@@ -224,11 +224,8 @@ static const GInterfaceInfo __TestInterface__iinfo = {
     NULL
 };
 
-/* TestFloatingWithSinkFunc */
-PYGLIB_DEFINE_TYPE("testhelper.FloatingWithSinkFunc", PyTestFloatingWithSinkFunc_Type, PyGObject);
-
-/* TestFloatingWithoutSinkFunc */
-PYGLIB_DEFINE_TYPE("testhelper.FloatingWithoutSinkFunc", PyTestFloatingWithoutSinkFunc_Type, PyGObject);
+/* TestFloating */
+PYGLIB_DEFINE_TYPE("testhelper.Floating", PyTestFloating_Type, PyGObject);
 
 /* TestOwnedByLibrary */
 PYGLIB_DEFINE_TYPE("testhelper.OwnedByLibrary", PyTestOwnedByLibrary_Type, PyGObject);
@@ -325,6 +322,16 @@ test_double_callback (GObject *object, double d)
   return d;
 }
 
+static gint64 *
+test_int64_callback (GObject *object, gint64 i)
+{
+  g_return_val_if_fail (G_IS_OBJECT (object), -1);
+
+  if (i == G_MAXINT64)
+      return i-1;
+  return i;
+}
+
 static char *
 test_string_callback (GObject *object, char *s)
 {
@@ -342,7 +349,60 @@ test_object_callback (GObject *object, GObject *o)
   return o;
 }
 
-void
+static GParamSpec *
+test_paramspec_callback (GObject *object)
+{
+  g_return_val_if_fail (G_IS_OBJECT (object), NULL);
+
+  return g_param_spec_boolean ("test-param", "test", "test boolean", TRUE, G_PARAM_READABLE);
+}
+
+static GValue *
+test_gvalue_callback (GObject *object, const GValue *v)
+{
+  GValue *ret = g_malloc0 (sizeof (GValue));
+
+  g_return_val_if_fail (G_IS_OBJECT (object), NULL);
+  g_return_val_if_fail (G_IS_VALUE (v), NULL);
+
+  g_value_init (ret, G_VALUE_TYPE (v));
+  g_value_copy (v, ret);
+  return ret;
+}
+
+static GValue *
+test_gvalue_ret_callback (GObject *object, GType type)
+{
+  GValue *ret = g_malloc0 (sizeof (GValue));
+
+  g_return_val_if_fail (G_IS_OBJECT (object), NULL);
+
+  g_value_init (ret, type);
+
+  switch (type) {
+    case G_TYPE_INT:
+      g_value_set_int(ret, G_MAXINT);
+      break;
+    case G_TYPE_INT64:
+      g_value_set_int64(ret, G_MAXINT64);
+      break;
+    case G_TYPE_UINT:
+      g_value_set_uint(ret, G_MAXUINT);
+      break;
+    case G_TYPE_UINT64:
+      g_value_set_uint64(ret, G_MAXUINT64);
+      break;
+    case G_TYPE_STRING:
+      g_value_set_string(ret, "hello");
+      break;
+    default:
+      g_critical ("test_gvalue_ret_callback() does not support type %s", g_type_name (type));
+  }
+
+  return ret;
+}
+
+static void
 connectcallbacks (GObject *object)
 {
 
@@ -377,12 +437,28 @@ connectcallbacks (GObject *object)
                     G_CALLBACK (test_double_callback), 
                     NULL);
   g_signal_connect (G_OBJECT (object),
+                    "test_int64",
+                    G_CALLBACK (test_int64_callback), 
+                    NULL);
+  g_signal_connect (G_OBJECT (object),
                     "test_string",
                     G_CALLBACK (test_string_callback), 
                     NULL);
   g_signal_connect (G_OBJECT (object),
                     "test_object",
                     G_CALLBACK (test_object_callback), 
+                    NULL);
+  g_signal_connect (G_OBJECT (object),
+                    "test_paramspec",
+                    G_CALLBACK (test_paramspec_callback), 
+                    NULL);
+  g_signal_connect (G_OBJECT (object),
+                    "test_gvalue",
+                    G_CALLBACK (test_gvalue_callback), 
+                    NULL);
+  g_signal_connect (G_OBJECT (object),
+                    "test_gvalue_ret",
+                    G_CALLBACK (test_gvalue_ret_callback), 
                     NULL);
 }
 
@@ -531,7 +607,7 @@ PYGLIB_MODULE_START(testhelper, "testhelper")
 
   d = PyModule_GetDict(module);
 
-  if ((m = PyImport_ImportModule("gobject")) != NULL) {
+  if ((m = PyImport_ImportModule("gi._gobject")) != NULL) {
     PyObject *moddict = PyModule_GetDict(m);
     
     _PyGObject_Type = (PyTypeObject *)PyDict_GetItemString(moddict, "GObject");
@@ -563,29 +639,15 @@ PYGLIB_MODULE_START(testhelper, "testhelper")
 			   Py_BuildValue("(O)",
                            &PyGObject_Type,
                            &PyTestInterface_Type));
-  pyg_set_object_has_new_constructor(TEST_TYPE_UNKNOWN);
-  //pyg_register_class_init(TEST_TYPE_UNKNOWN, __GtkUIManager_class_init);
 
-  /* TestFloatingWithSinkFunc */
-  PyTestFloatingWithSinkFunc_Type.tp_flags = (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE);
-  PyTestFloatingWithSinkFunc_Type.tp_weaklistoffset = offsetof(PyGObject, weakreflist);
-  PyTestFloatingWithSinkFunc_Type.tp_dictoffset = offsetof(PyGObject, inst_dict);
-  pygobject_register_class(d, "FloatingWithSinkFunc", TEST_TYPE_FLOATING_WITH_SINK_FUNC,
-			   &PyTestFloatingWithSinkFunc_Type,
+  /* TestFloating */
+  PyTestFloating_Type.tp_flags = (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE);
+  PyTestFloating_Type.tp_weaklistoffset = offsetof(PyGObject, weakreflist);
+  PyTestFloating_Type.tp_dictoffset = offsetof(PyGObject, inst_dict);
+  pygobject_register_class(d, "Floating", TEST_TYPE_FLOATING,
+			   &PyTestFloating_Type,
 			   Py_BuildValue("(O)",
                            &PyGObject_Type));
-  pyg_set_object_has_new_constructor(TEST_TYPE_FLOATING_WITH_SINK_FUNC);
-  pygobject_register_sinkfunc(TEST_TYPE_FLOATING_WITH_SINK_FUNC, sink_test_floating_with_sink_func);
-
-  /* TestFloatingWithoutSinkFunc */
-  PyTestFloatingWithoutSinkFunc_Type.tp_flags = (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE);
-  PyTestFloatingWithoutSinkFunc_Type.tp_weaklistoffset = offsetof(PyGObject, weakreflist);
-  PyTestFloatingWithoutSinkFunc_Type.tp_dictoffset = offsetof(PyGObject, inst_dict);
-  pygobject_register_class(d, "FloatingWithoutSinkFunc", TEST_TYPE_FLOATING_WITHOUT_SINK_FUNC,
-			   &PyTestFloatingWithoutSinkFunc_Type,
-			   Py_BuildValue("(O)",
-                           &PyGObject_Type));
-  pyg_set_object_has_new_constructor(TEST_TYPE_FLOATING_WITHOUT_SINK_FUNC);
 
   /* TestOwnedByLibrary */
   PyTestOwnedByLibrary_Type.tp_flags = (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE);
@@ -596,7 +658,6 @@ PYGLIB_MODULE_START(testhelper, "testhelper")
 			   &PyTestOwnedByLibrary_Type,
 			   Py_BuildValue("(O)",
                            &PyGObject_Type));
-  pyg_set_object_has_new_constructor(TEST_TYPE_OWNED_BY_LIBRARY);
 
   /* TestFloatingAndSunk */
   PyTestFloatingAndSunk_Type.tp_flags = (Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE);
@@ -607,7 +668,6 @@ PYGLIB_MODULE_START(testhelper, "testhelper")
                            &PyTestFloatingAndSunk_Type,
                            Py_BuildValue("(O)",
                            &PyGObject_Type));
-  pyg_set_object_has_new_constructor(TEST_TYPE_FLOATING_AND_SUNK);
 }
 PYGLIB_MODULE_END
 

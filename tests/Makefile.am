@@ -1,11 +1,9 @@
 CLEANFILES =
-noinst_LTLIBRARIES = 
-if ENABLE_INTROSPECTION
-noinst_LTLIBRARIES += libregress.la libgimarshallingtests.la
+noinst_LTLIBRARIES = libregress.la libgimarshallingtests.la
 
 nodist_libregress_la_SOURCES = $(GI_DATADIR)/tests/regress.c $(GI_DATADIR)/tests/regress.h
-libregress_la_CFLAGS = $(GIO_CFLAGS) $(PYCAIRO_CFLAGS)
-libregress_la_LDFLAGS = -module -avoid-version $(GIO_LIBS) $(PYCAIRO_LIBS)
+libregress_la_CFLAGS = $(GIO_CFLAGS) $(CAIRO_CFLAGS)
+libregress_la_LDFLAGS = -module -avoid-version $(GIO_LIBS) $(CAIRO_LIBS)
 nodist_libgimarshallingtests_la_SOURCES = $(GI_DATADIR)/tests/gimarshallingtests.c $(GI_DATADIR)/tests/gimarshallingtests.h
 libgimarshallingtests_la_CFLAGS = $(GLIB_CFLAGS)
 libgimarshallingtests_la_LDFLAGS = -module -avoid-version $(GLIB_LIBS)
@@ -44,11 +42,10 @@ gschemas.compiled: org.gnome.test.gschema.xml
 	glib-compile-schemas --targetdir=. --schema-file=$<
 
 CLEANFILES += Regress-1.0.gir Regress-1.0.typelib GIMarshallingTests-1.0.gir GIMarshallingTests-1.0.typelib gschemas.compiled
-endif
 
 noinst_LTLIBRARIES += testhelper.la
 
-testhelper_la_CFLAGS = -I$(top_srcdir)/gobject -I$(top_srcdir)/glib $(PYTHON_INCLUDES) $(GLIB_CFLAGS)
+testhelper_la_CFLAGS = -I$(top_srcdir)/gi/_gobject -I$(top_srcdir)/gi/_glib $(PYTHON_INCLUDES) $(GLIB_CFLAGS)
 testhelper_la_LDFLAGS = -module -avoid-version
 testhelper_la_LIBADD = $(GLIB_LIBS)
 testhelper_la_SOURCES = \
@@ -68,7 +65,17 @@ testhelper.la: $(testhelper_la_OBJECTS) $(testhelper_la_DEPENDENCIES)
 
 all: $(LTLIBRARIES:.la=.so)
 
-TEST_FILES_STATIC = \
+EXTRA_DIST = \
+	compathelper.py \
+	runtests.py \
+	runtests-windows.py \
+	testmodule.py \
+	test-floating.h \
+	test-thread.h \
+	test-unknown.h \
+	te_ST@nouppera \
+	org.gnome.test.gschema.xml \
+	test_glib.py \
 	test_gobject.py \
 	test_interface.py \
 	test_mainloop.py \
@@ -78,35 +85,22 @@ TEST_FILES_STATIC = \
 	test_source.py \
 	test_subprocess.py \
 	test_thread.py \
-	test_uris.py
-
-if BUILD_GIO
-TEST_FILES_GIO = \
-	test_gio.py \
-	test_gresolver.py \
-	test_gsocket.py \
-	test_gicon.py \
-	test_gcancellable.py
-endif 
-
-if ENABLE_INTROSPECTION
-TEST_FILES_GI = \
+	test_uris.py \
 	test_everything.py \
 	test_gi.py \
 	test_gdbus.py \
-	test_overrides.py
-endif
-
-EXTRA_DIST = \
-	compathelper.py \
-	runtests.py \
-	testmodule.py \
-	test-floating.h \
-	test-thread.h \
-	test-unknown.h \
-	org.gnome.test.gschema.xml
-
-EXTRA_DIST += $(TEST_FILES_STATIC) $(TEST_FILES_GI) $(TEST_FILES_GIO)
+	test_overrides.py \
+	test_overrides_gio.py \
+	test_overrides_glib.py \
+	test_overrides_pango.py \
+	test_overrides_gdk.py \
+	test_overrides_gtk.py \
+	test_atoms.py \
+	test_pygtkcompat.py \
+	gi/__init__.py \
+	gi/overrides/__init__.py \
+	gi/overrides/Regress.py \
+	$(NULL)
 
 clean-local:
 	rm -f $(LTLIBRARIES:.la=.so) file.txt~
@@ -117,21 +111,21 @@ RUN_TESTS_ENV_VARS= \
 	LD_LIBRARY_PATH=$(builddir)/.libs:$$LD_LIBRARY_PATH \
 	GI_TYPELIB_PATH=$(builddir):$$GI_TYPELIB_PATH \
 	XDG_DATA_DIRS=$$XDG_DATA_DIRS:/usr/share \
+	MALLOC_PERTURB_=85 \
 	TESTS_BUILDDIR=$(builddir)
-RUN_TESTS_LAUNCH=$(RUN_TESTS_ENV_VARS) $(DBUS_LAUNCH) $(EXEC_NAME) $(PYTHON) $(srcdir)/runtests.py
 
-# run tests in separately to avoid loading static and introspection bindings in the same process
 check-local: $(LTLIBRARIES:.la=.so) Regress-1.0.typelib GIMarshallingTests-1.0.typelib gschemas.compiled
-	TEST_FILES="$(TEST_FILES_STATIC)" $(RUN_TESTS_LAUNCH)
-	TEST_FILES="$(TEST_FILES_GI)" $(RUN_TESTS_LAUNCH)
-if BUILD_GIO
-	TEST_FILES="$(TEST_FILES_GIO)" $(RUN_TESTS_LAUNCH)
-endif 
+	@echo "  CHECK  Pyflakes"
+	@if type pyflakes >/dev/null 2>&1; then pyflakes $(top_srcdir); else echo "skipped, pyflakes not installed"; fi
+	@echo "  CHECK  PEP8"
+	@if type pep8 >/dev/null 2>&1; then pep8 --ignore=E501,E123,E124 --repeat --show-source $(top_srcdir); else echo "skipped, pep8 not installed"; fi
+	$(RUN_TESTS_ENV_VARS) $(DBUS_LAUNCH) $(EXEC_NAME) $(PYTHON) -Wd -Werror::PendingDeprecationWarning -Werror::DeprecationWarning $(srcdir)/runtests.py
 
 check.gdb:
 	EXEC_NAME="gdb --args" $(MAKE) check
 
-check.valgrind:
-	EXEC_NAME="valgrind --suppressions=python.supp" G_SLICE=always-malloc G_DEBUG=gc-friendly $(MAKE) check
+check.nemiver:
+	EXEC_NAME="nemiver" $(MAKE) check
 
--include $(top_srcdir)/git.mk
+check.valgrind:
+	EXEC_NAME="valgrind --leak-check=full --show-possibly-lost=no --suppressions=python.supp" G_SLICE=always-malloc G_DEBUG=gc-friendly $(MAKE) check

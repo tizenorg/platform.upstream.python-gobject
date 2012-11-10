@@ -1,30 +1,20 @@
-ACLOCAL_AMFLAGS = -I m4
+ACLOCAL_AMFLAGS = -I m4 ${ACLOCAL_FLAGS}
 AUTOMAKE_OPTIONS = 1.7
 
-SUBDIRS = docs codegen glib gobject gio examples
+SUBDIRS = examples gi tests
 
-if ENABLE_INTROSPECTION
-SUBDIRS += gi
-endif
+PLATFORM_VERSION = 3.0
 
-SUBDIRS += tests
+CLEANFILES = \
+	`find "$(builddir)" -type f -name "*.pyc" -print`
 
-PLATFORM_VERSION = 2.0
-
-CLEANFILES =
-EXTRA_DIST = 				\
-	MANIFEST.in 			\
-	README.win32 			\
+EXTRA_DIST = \
+	ChangeLog.pre-2.18 \
 	pygobject-$(PLATFORM_VERSION).pc.in \
-	PKG-INFO 			\
-	PKG-INFO.in 			\
-	setup.py			\
-	pygobject_postinstall.py	\
-	pygtk.py			\
-	dsextras.py			\
-	ChangeLog.pre-2.18		\
-	m4/as-ac-expand.m4		\
-	m4/jhflags.m4			\
+	PKG-INFO \
+	PKG-INFO.in \
+	m4/as-ac-expand.m4 \
+	m4/jhflags.m4 \
 	m4/python.m4
 
 MAINTAINERCLEANFILES = \
@@ -52,41 +42,24 @@ MAINTAINERCLEANFILES = \
 	$(srcdir)/m4/ltversion.m4 \
 	$(srcdir)/m4/lt~obsolete.m4 \
 	`find "$(srcdir)" -type f -name Makefile.in -print` \
-	`find "$(srcdir)" -type f -name "*.pyc" -print`
+	`find "$(builddir)" -type f -name "*.pyc" -print`
 
 BUILT_EXTRA_DIST = 		\
 	ChangeLog
-
-INCLUDES = -I$(top_srcdir)/gobject $(PYTHON_INCLUDES) $(GLIB_CFLAGS)
 
 # pkg-config files
 pkgconfigdir = $(libdir)/pkgconfig
 pkgconfig_DATA = pygobject-$(PLATFORM_VERSION).pc
 
-# python modules
-pkgpyexecdir = $(pyexecdir)/gtk-2.0
-pkgpyexec_PYTHON = dsextras.py
-pkgpyexec_LTLIBRARIES =
-
 # python
-pyexec_PYTHON = pygtk.py
 pyexec_LTLIBRARIES =
-
-# linker flags
-common_ldflags = -module -avoid-version
-if PLATFORM_WIN32
-common_ldflags += -no-undefined
-endif
 
 # install pth file.
 install-data-local:
 	$(mkinstalldirs) $(DESTDIR)$(pythondir)
-	echo "gtk-$(PLATFORM_VERSION)" > $(DESTDIR)$(pyexecdir)/pygtk.pth
 install-exec-local:
 	$(mkinstalldirs) $(DESTDIR)$(pyexecdir)
-	echo "gtk-$(PLATFORM_VERSION)" > $(DESTDIR)$(pyexecdir)/pygtk.pth
 uninstall-local:
-	rm -f $(DESTDIR)$(pythondir)/pygtk.pth $(DESTDIR)$(pyexecdir)/pygtk.pth
 
 EGG_NAME = $(PACKAGE)-$(PACKAGE_VERSION)-py$(PYTHON_VERSION)-$(PLATFORM).egg
 
@@ -97,11 +70,10 @@ egg: $(top_srcdir)/gobject/gobject.la PKG-INFO
 	$(MKDIR_P) $(EGG_TMPDIR)
 	$(MKDIR_P) $(EGG_TMPDIR)/EGG-INFO
 	$(MAKE) -C gobject install-pkgpyexecLTLIBRARIES pkgpyexecdir=$(EGG_TMPDIR)
-	$(INSTALL) dsextras.py $(EGG_TMPDIR)
 	rm -fr $(EGG_TMPDIR)/gobject.la
 	$(INSTALL) PKG-INFO $(EGG_TMPDIR)/EGG-INFO
 	echo "gobject.so" >> $(EGG_TMPDIR)/EGG-INFO/native_libs.txt
-	( echo "gobject" ; echo "dsextras.py" ) >> $(EGG_TMPDIR)/EGG-INFO/top_level.txt
+	( echo "gobject" ) >> $(EGG_TMPDIR)/EGG-INFO/top_level.txt
 	cd $(EGG_TMPDIR) && zip -rq $(EGG_NAME) .
 	mv $(EGG_TMPDIR)/$(EGG_NAME) .
 	rm -fr $(EGG_TMPDIR)
@@ -115,16 +87,26 @@ doc-dist:
 	tar cfz $(PACKAGE)-docs.tar.gz pygobject
 	rm -fr pygobject
 
-release-tag:
-	@ROOT=`svn info --xml|egrep ^"<url>"|cut -d\> -f2|cut -d\< -f1`; \
-	SVNVERSION=`echo $(VERSION)|sed s/\\\./_/g`;\
-	  echo "* Tagging $(VERSION)"; \
-          svn cp -m "Tag $(VERSION)" \
-              $$ROOT \
-              svn+ssh://johan@svn.gnome.org/svn/pygobject/tags/PYGOBJECT_$$SVNVERSION
+release-news:
+	printf "%-8s%s\n" "$(VERSION)" "`LC_TIME=C date '+%d-%b-%Y'`" > NEWS.tmp
 
+	@echo -e "\n\n\nFor blogging, you can copy&paste this HTML formatted news:"
+	@echo "-------------- 8< -------------"
+	@last=`head -n1 NEWS | cut -f1 -d' '`; \
+        echo "<ul>"; \
+	for commit in `git rev-list $$last..`; do \
+	   data=`git log --format="format:%s%n%an%n%b" $$commit^..$$commit`; \
+	   echo "$$data" | perl -e '$$subj = <>; chomp $$subj; $$author = <>; chomp $$author; while (<>) { if (/bugzilla.gnome.org.*id=([0-9]+)/) { $$bug = $$1 }};  print "  <li>$$subj ($$author)"; if ($$bug) { print " (<a href=\"https://bugzilla.gnome.org/show_bug.cgi?id=$$bug\">#$$bug</a>)"; }; print "</li>\n"'; \
+	   echo "$$data" | perl -e '$$subj = <>; chomp $$subj; $$author = <>; chomp $$author; while (<>) { if (/bugzilla.gnome.org.*id=([0-9]+)/) { $$bug = $$1 }};  print "        - $$subj ($$author)"; if ($$bug) { print " (#$$bug)"; }; print "\n"' >> NEWS.tmp; \
+        done
+	@echo "</ul>"
+	@echo "-------------- 8< -------------"
 
-.PHONY: ChangeLog
+	@echo >> NEWS.tmp
+	@cat NEWS >> NEWS.tmp
+	@mv NEWS.tmp NEWS
+
+.PHONY: ChangeLog release-news
 
 ChangeLog:
 	@echo Creating $@
@@ -155,8 +137,8 @@ dist-hook: $(BUILT_EXTRA_DIST)
 check.gdb:
 	cd tests && $(MAKE) check.gdb
 
+check.nemiver:
+	cd tests && $(MAKE) check.nemiver
+
 check.valgrind:
 	cd tests && $(MAKE) check.valgrind
-
-
--include $(top_srcdir)/git.mk
