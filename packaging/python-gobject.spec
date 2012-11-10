@@ -2,7 +2,7 @@
 %define local_py_sitedir  %{py_sitedir}
 
 Name:           python-gobject
-Version:        2.28.6
+Version:        3.4.0
 Release:        6
 License:        LGPL-2.1+
 %define _name   pygobject
