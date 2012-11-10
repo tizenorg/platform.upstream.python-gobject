@@ -9,7 +9,7 @@ License:        LGPL-2.1+
 Summary:        Python bindings for GObject
 Url:            http://ftp.gnome.org/pub/GNOME/sources/pygobject/
 Group:          Development/Libraries/Python
-Source:         http://ftp.gnome.org/pub/GNOME/sources/pygobject/2.28/%{_name}-%{version}.tar.bz2
+Source:         http://ftp.gnome.org/pub/GNOME/sources/pygobject/3.4/%{_name}-%{version}.tar.xz
 BuildRequires:  fdupes
 BuildRequires:  libffi-devel
 BuildRequires:  libtool
