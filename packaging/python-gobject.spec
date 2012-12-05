@@ -30,8 +30,6 @@ GLib's GObjects.
 Summary:        Python bindings for GObject -- Cairo bindings
 Group:          Development/Libraries/Python
 Requires:       %{name} = %{version}
-%define cairo_real_package %(rpm -q --qf '%%{NAME}' --whatprovides cairo)
-Supplements:    packageand(%{name}:%{cairo_real_package})
 
 %description cairo
 Pygobjects is an extension module for python that gives you access to
