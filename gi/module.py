@@ -275,7 +275,7 @@ class DynamicModule(types.ModuleType):
 
     DynamicModule wraps up an IntrospectionModule and an overrides module
     into a single accessible module. This is what is returned from statements
-    like "from gi.repository import Foo". Accessing attributes on a DynamicModule
+    like xxx. Accessing attributes on a DynamicModule
     will first look overrides (or the gi.overrides.registry cache) and then
     in the introspection module if it was not found as an override.
     """
