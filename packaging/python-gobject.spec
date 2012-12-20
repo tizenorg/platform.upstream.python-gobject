@@ -1,6 +1,6 @@
 %define local_py_requires %{py_requires}
 %define local_py_sitedir  %{py_sitedir}
-%define local_py_suffix   %{nil}
+%define local_py_suffix   2
 %define local_lib_ver     0
 
 Name:           python-gobject
@@ -8,10 +8,10 @@ Name:           python-gobject
 Summary:        Python bindings for GObject
 License:        LGPL-2.1+
 Group:          Development/Libraries/Python
-Version:        3.4.0
+Version:        3.7.3
 Release:        2.1
 Url:            http://ftp.gnome.org/pub/GNOME/sources/pygobject/
-Source:         http://download.gnome.org/sources/pygobject/3.4/%{_name}-%{version}.tar.xz
+Source:         http://download.gnome.org/sources/pygobject/3.7/%{_name}-%{version}.tar.xz
 BuildRequires:  fdupes
 BuildRequires:  glib2-devel >= 2.31.0
 BuildRequires:  gobject-introspection-devel >= 1.33.14
@@ -20,7 +20,7 @@ BuildRequires:  python-cairo-devel
 BuildRequires:  python-devel
 BuildRequires:  pkgconfig(cairo)
 BuildRequires:  pkgconfig(cairo-gobject)
-%{local_py_requires}
+BuildRequires:  python
 
 %description
 Pygobjects is an extension module for python that gives you access to
@@ -87,7 +87,9 @@ rm examples/Makefile*
 
 %files
 %defattr(-,root,root)
+%license COPYING
 %{local_py_sitedir}/gi/
+%{local_py_sitedir}/pygobject-*
 # Lives in cairo subpackage
 %exclude %{local_py_sitedir}/gi/_gi_cairo.so
 # Lives in pygtkcompat subpackage
@@ -103,7 +105,8 @@ rm examples/Makefile*
 
 %files pygtkcompat
 %defattr(-,root,root)
-%{local_py_sitedir}/gi/pygtkcompat.py
+#%{local_py_sitedir}/gi/pygtkcompat.py
+%{local_py_sitedir}/pygtkcompat
 
 %files devel
 %defattr(-,root,root)
