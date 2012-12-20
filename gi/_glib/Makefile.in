@@ -105,9 +105,8 @@ am__DEPENDENCIES_1 =
 @OS_WIN32_TRUE@am__DEPENDENCIES_2 = $(am__DEPENDENCIES_1)
 _glib_la_DEPENDENCIES = $(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
 	libpyglib-gi-2.0-@PYTHON_BASENAME@.la
-am__glib_la_OBJECTS = _glib_la-glibmodule.lo _glib_la-pygiochannel.lo \
+am__glib_la_OBJECTS = _glib_la-glibmodule.lo \
 	_glib_la-pygoptioncontext.lo _glib_la-pygoptiongroup.lo \
-	_glib_la-pygmaincontext.lo _glib_la-pygmainloop.lo \
 	_glib_la-pygsource.lo _glib_la-pygspawn.lo
 _glib_la_OBJECTS = $(am__glib_la_OBJECTS)
 AM_V_lt = $(am__v_lt_@AM_V@)
@@ -183,6 +182,9 @@ CAIRO_LIBS = @CAIRO_LIBS@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
+CODE_COVERAGE_CFLAGS = @CODE_COVERAGE_CFLAGS@
+CODE_COVERAGE_ENABLED = @CODE_COVERAGE_ENABLED@
+CODE_COVERAGE_LDFLAGS = @CODE_COVERAGE_LDFLAGS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
 CYGPATH_W = @CYGPATH_W@
@@ -200,6 +202,7 @@ EXEEXT = @EXEEXT@
 FFI_CFLAGS = @FFI_CFLAGS@
 FFI_LIBS = @FFI_LIBS@
 FGREP = @FGREP@
+GENHTML = @GENHTML@
 GIO_CFLAGS = @GIO_CFLAGS@
 GIO_LIBS = @GIO_LIBS@
 GI_CFLAGS = @GI_CFLAGS@
@@ -219,6 +222,7 @@ INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
 INTROSPECTION_COMPILER = @INTROSPECTION_COMPILER@
 INTROSPECTION_SCANNER = @INTROSPECTION_SCANNER@
+LCOV = @LCOV@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
 LIBFFI_PC = @LIBFFI_PC@
@@ -228,7 +232,6 @@ LIBTOOL = @LIBTOOL@
 LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
-MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
 MKDIR_P = @MKDIR_P@
@@ -369,16 +372,10 @@ libpyglib_gi_2_0_@PYTHON_BASENAME@_la_LIBADD = \
 pyglib_LTLIBRARIES = _glib.la
 _glib_la_SOURCES = \
 	glibmodule.c \
-	pygiochannel.c \
-	pygiochannel.h \
 	pygoptioncontext.c \
 	pygoptioncontext.h \
 	pygoptiongroup.c \
 	pygoptiongroup.h \
-	pygmaincontext.c \
-	pygmaincontext.h \
-	pygmainloop.c \
-	pygmainloop.h \
 	pygsource.c \
 	pygsource.h \
 	pygspawn.c \
@@ -401,7 +398,7 @@ all: all-am
 
 .SUFFIXES:
 .SUFFIXES: .c .la .lo .o .obj .so
-$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am  $(am__configure_deps)
+$(srcdir)/Makefile.in:  $(srcdir)/Makefile.am  $(am__configure_deps)
 	@for dep in $?; do \
 	  case '$(am__configure_deps)' in \
 	    *$$dep*) \
@@ -426,9 +423,9 @@ Makefile: $(srcdir)/Makefile.in $(top_builddir)/config.status
 $(top_builddir)/config.status: $(top_srcdir)/configure $(CONFIG_STATUS_DEPENDENCIES)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 
-$(top_srcdir)/configure: @MAINTAINER_MODE_TRUE@ $(am__configure_deps)
+$(top_srcdir)/configure:  $(am__configure_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
-$(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
+$(ACLOCAL_M4):  $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
 install-libLTLIBRARIES: $(lib_LTLIBRARIES)
@@ -507,9 +504,6 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_glib_la-glibmodule.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_glib_la-pygiochannel.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_glib_la-pygmaincontext.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_glib_la-pygmainloop.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_glib_la-pygoptioncontext.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_glib_la-pygoptiongroup.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_glib_la-pygsource.Plo@am__quote@
@@ -544,13 +538,6 @@ _glib_la-glibmodule.lo: glibmodule.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_glib_la_CPPFLAGS) $(CPPFLAGS) $(_glib_la_CFLAGS) $(CFLAGS) -c -o _glib_la-glibmodule.lo `test -f 'glibmodule.c' || echo '$(srcdir)/'`glibmodule.c
 
-_glib_la-pygiochannel.lo: pygiochannel.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_glib_la_CPPFLAGS) $(CPPFLAGS) $(_glib_la_CFLAGS) $(CFLAGS) -MT _glib_la-pygiochannel.lo -MD -MP -MF $(DEPDIR)/_glib_la-pygiochannel.Tpo -c -o _glib_la-pygiochannel.lo `test -f 'pygiochannel.c' || echo '$(srcdir)/'`pygiochannel.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/_glib_la-pygiochannel.Tpo $(DEPDIR)/_glib_la-pygiochannel.Plo
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='pygiochannel.c' object='_glib_la-pygiochannel.lo' libtool=yes @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_glib_la_CPPFLAGS) $(CPPFLAGS) $(_glib_la_CFLAGS) $(CFLAGS) -c -o _glib_la-pygiochannel.lo `test -f 'pygiochannel.c' || echo '$(srcdir)/'`pygiochannel.c
-
 _glib_la-pygoptioncontext.lo: pygoptioncontext.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_glib_la_CPPFLAGS) $(CPPFLAGS) $(_glib_la_CFLAGS) $(CFLAGS) -MT _glib_la-pygoptioncontext.lo -MD -MP -MF $(DEPDIR)/_glib_la-pygoptioncontext.Tpo -c -o _glib_la-pygoptioncontext.lo `test -f 'pygoptioncontext.c' || echo '$(srcdir)/'`pygoptioncontext.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/_glib_la-pygoptioncontext.Tpo $(DEPDIR)/_glib_la-pygoptioncontext.Plo
@@ -564,20 +551,6 @@ _glib_la-pygoptiongroup.lo: pygoptiongroup.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='pygoptiongroup.c' object='_glib_la-pygoptiongroup.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_glib_la_CPPFLAGS) $(CPPFLAGS) $(_glib_la_CFLAGS) $(CFLAGS) -c -o _glib_la-pygoptiongroup.lo `test -f 'pygoptiongroup.c' || echo '$(srcdir)/'`pygoptiongroup.c
-
-_glib_la-pygmaincontext.lo: pygmaincontext.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_glib_la_CPPFLAGS) $(CPPFLAGS) $(_glib_la_CFLAGS) $(CFLAGS) -MT _glib_la-pygmaincontext.lo -MD -MP -MF $(DEPDIR)/_glib_la-pygmaincontext.Tpo -c -o _glib_la-pygmaincontext.lo `test -f 'pygmaincontext.c' || echo '$(srcdir)/'`pygmaincontext.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/_glib_la-pygmaincontext.Tpo $(DEPDIR)/_glib_la-pygmaincontext.Plo
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='pygmaincontext.c' object='_glib_la-pygmaincontext.lo' libtool=yes @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_glib_la_CPPFLAGS) $(CPPFLAGS) $(_glib_la_CFLAGS) $(CFLAGS) -c -o _glib_la-pygmaincontext.lo `test -f 'pygmaincontext.c' || echo '$(srcdir)/'`pygmaincontext.c
-
-_glib_la-pygmainloop.lo: pygmainloop.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_glib_la_CPPFLAGS) $(CPPFLAGS) $(_glib_la_CFLAGS) $(CFLAGS) -MT _glib_la-pygmainloop.lo -MD -MP -MF $(DEPDIR)/_glib_la-pygmainloop.Tpo -c -o _glib_la-pygmainloop.lo `test -f 'pygmainloop.c' || echo '$(srcdir)/'`pygmainloop.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/_glib_la-pygmainloop.Tpo $(DEPDIR)/_glib_la-pygmainloop.Plo
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='pygmainloop.c' object='_glib_la-pygmainloop.lo' libtool=yes @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_glib_la_CPPFLAGS) $(CPPFLAGS) $(_glib_la_CFLAGS) $(CFLAGS) -c -o _glib_la-pygmainloop.lo `test -f 'pygmainloop.c' || echo '$(srcdir)/'`pygmainloop.c
 
 _glib_la-pygsource.lo: pygsource.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_glib_la_CPPFLAGS) $(CPPFLAGS) $(_glib_la_CFLAGS) $(CFLAGS) -MT _glib_la-pygsource.lo -MD -MP -MF $(DEPDIR)/_glib_la-pygsource.Tpo -c -o _glib_la-pygsource.lo `test -f 'pygsource.c' || echo '$(srcdir)/'`pygsource.c
@@ -873,7 +846,7 @@ check-local: $(pyglib_LTLIBRARIES:.la=.so) build_pylinks
 clean-local:
 	rm -f $(pyglib_LTLIBRARIES:.la=.so)
 .la.so:
-	$(LN_S) .libs/$@ $@ || true
+	$(LN_S) -f .libs/$@ $@
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

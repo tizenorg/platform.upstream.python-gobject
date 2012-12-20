@@ -322,7 +322,7 @@ test_double_callback (GObject *object, double d)
   return d;
 }
 
-static gint64 *
+static gint64
 test_int64_callback (GObject *object, gint64 i)
 {
   g_return_val_if_fail (G_IS_OBJECT (object), -1);
@@ -602,12 +602,11 @@ PYGLIB_MODULE_START(testhelper, "testhelper")
 {
   PyObject *m, *d;
   
-  g_thread_init(NULL);
   pygobject_init(-1, -1, -1);
 
   d = PyModule_GetDict(module);
 
-  if ((m = PyImport_ImportModule("gi._gobject")) != NULL) {
+  if ((m = PyImport_ImportModule("gi._gobject._gobject")) != NULL) {
     PyObject *moddict = PyModule_GetDict(m);
     
     _PyGObject_Type = (PyTypeObject *)PyDict_GetItemString(moddict, "GObject");

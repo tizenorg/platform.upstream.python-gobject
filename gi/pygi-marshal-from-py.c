@@ -40,11 +40,39 @@ gi_argument_from_py_ssize_t (GIArgument   *arg_out,
     switch (type_tag) {
     case GI_TYPE_TAG_VOID:
     case GI_TYPE_TAG_BOOLEAN:
-    case GI_TYPE_TAG_INT8:
-    case GI_TYPE_TAG_UINT8:
-    case GI_TYPE_TAG_INT16:
-    case GI_TYPE_TAG_UINT16:
         goto unhandled_type;
+
+    case GI_TYPE_TAG_INT8:
+        if (size_in >= G_MININT8 && size_in <= G_MAXINT8) {
+            arg_out->v_int8 = size_in;
+            return TRUE;
+        } else {
+            goto overflow;
+        }
+
+    case GI_TYPE_TAG_UINT8:
+        if (size_in >= 0 && size_in <= G_MAXUINT8) {
+            arg_out->v_uint8 = size_in;
+            return TRUE;
+        } else {
+            goto overflow;
+        }
+
+    case GI_TYPE_TAG_INT16:
+        if (size_in >= G_MININT16 && size_in <= G_MAXINT16) {
+            arg_out->v_int16 = size_in;
+            return TRUE;
+        } else {
+            goto overflow;
+        }
+
+    case GI_TYPE_TAG_UINT16:
+        if (size_in >= 0 && size_in <= G_MAXUINT16) {
+            arg_out->v_uint16 = size_in;
+            return TRUE;
+        } else {
+            goto overflow;
+        }
 
         /* Ranges assume two's complement */
     case GI_TYPE_TAG_INT32:
@@ -376,12 +404,12 @@ _pygi_marshal_from_py_uint16 (PyGIInvokeState   *state,
 
     if (PyErr_Occurred ()) {
         PyErr_Clear ();
-        PyErr_Format (PyExc_ValueError, "%li not in range %d to %d", long_, 0, 65535);
+        PyErr_Format (PyExc_ValueError, "%ld not in range %d to %d", long_, 0, 65535);
         return FALSE;
     }
 
     if (long_ < 0 || long_ > 65535) {
-        PyErr_Format (PyExc_ValueError, "%li not in range %d to %d", long_, 0, 65535);
+        PyErr_Format (PyExc_ValueError, "%ld not in range %d to %d", long_, 0, 65535);
         return FALSE;
     }
 
@@ -460,12 +488,12 @@ _pygi_marshal_from_py_uint32 (PyGIInvokeState   *state,
 
     if (PyErr_Occurred ()) {
         PyErr_Clear ();
-        PyErr_Format (PyExc_ValueError, "%lli not in range %i to %u", long_, 0, G_MAXUINT32);
+        PyErr_Format (PyExc_ValueError, "%lld not in range %i to %u", long_, 0, G_MAXUINT32);
         return FALSE;
     }
 
     if (long_ < 0 || long_ > G_MAXUINT32) {
-        PyErr_Format (PyExc_ValueError, "%lli not in range %i to %u", long_, 0, G_MAXUINT32);
+        PyErr_Format (PyExc_ValueError, "%lld not in range %i to %u", long_, 0, G_MAXUINT32);
         return FALSE;
     }
 
@@ -531,15 +559,10 @@ _pygi_marshal_from_py_int64 (PyGIInvokeState   *state,
             Py_DECREF (py_str);
         }
 
-        PyErr_Format (PyExc_ValueError, "%s not in range %" G_GINT64_FORMAT " to %" G_GINT64_FORMAT,
-                      long_str, G_MININT64, G_MAXINT64);
+        PyErr_Format (PyExc_ValueError, "%s not in range %lld to %lld",
+                      long_str, (long long) G_MININT64, (long long) G_MAXINT64);
 
         g_free (long_str);
-        return FALSE;
-    }
-
-    if (long_ < G_MININT64 || long_ > G_MAXINT64) {
-        PyErr_Format (PyExc_ValueError, "%" G_GINT64_FORMAT " not in range %" G_GINT64_FORMAT " to %" G_GINT64_FORMAT, long_, G_MININT64, G_MAXINT64);
         return FALSE;
     }
 
@@ -570,13 +593,13 @@ _pygi_marshal_from_py_uint64 (PyGIInvokeState   *state,
 
 #if PY_VERSION_HEX < 0x03000000
     if (PyInt_Check (py_long)) {
-        gint64 long_ = (gint64) PyInt_AsLong (py_long);
-        if (long_ < 0) {
+        long long_ =  PyInt_AsLong (py_long);
+        if (long_ < 0 || long_ > G_MAXUINT64) {
             PyErr_Format (PyExc_ValueError, "%" G_GUINT64_FORMAT " not in range %d to %" G_GUINT64_FORMAT,
                           (gint64) long_, 0, G_MAXUINT64);
             return FALSE;
         }
-        ulong_ = long_;
+        ulong_ = (guint64) long_;
     } else
 #endif
         ulong_ = PyLong_AsUnsignedLongLong (py_long);
@@ -741,8 +764,8 @@ _pygi_marshal_from_py_unichar (PyGIInvokeState   *state,
     }
 
     if (size != 1) {
-       PyErr_Format (PyExc_TypeError, "Must be a one character string, not %" G_GINT64_FORMAT " characters",
-                     (gint64) size);
+       PyErr_Format (PyExc_TypeError, "Must be a one character string, not %lld characters",
+                     (long long) size);
        g_free (string_);
        return FALSE;
     }
@@ -907,6 +930,7 @@ _pygi_marshal_from_py_array (PyGIInvokeState   *state,
     if (sequence_cache->item_cache->type_tag == GI_TYPE_TAG_UINT8 &&
         PYGLIB_PyBytes_Check (py_arg)) {
         memcpy(array_->data, PYGLIB_PyBytes_AsString (py_arg), length);
+        array_->len = length;
         if (sequence_cache->is_zero_terminated) {
             /* If array_ has been created with zero_termination, space for the
              * terminator is properly allocated, so we're not off-by-one here. */
@@ -1310,6 +1334,59 @@ _pygi_marshal_from_py_gerror (PyGIInvokeState   *state,
     return FALSE;
 }
 
+/* _pygi_destroy_notify_dummy:
+ *
+ * Dummy method used in the occasion when a method has a GDestroyNotify
+ * argument without user data.
+ */
+static void
+_pygi_destroy_notify_dummy (gpointer data) {
+}
+
+static PyGICClosure *global_destroy_notify;
+
+static void
+_pygi_destroy_notify_callback_closure (ffi_cif *cif,
+                                       void *result,
+                                       void **args,
+                                       void *data)
+{
+    PyGICClosure *info = * (void**) (args[0]);
+
+    g_assert (info);
+
+    _pygi_invoke_closure_free (info);
+}
+
+/* _pygi_destroy_notify_create:
+ *
+ * Method used in the occasion when a method has a GDestroyNotify
+ * argument with user data.
+ */
+static PyGICClosure*
+_pygi_destroy_notify_create (void)
+{
+    if (!global_destroy_notify) {
+
+        PyGICClosure *destroy_notify = g_slice_new0 (PyGICClosure);
+
+        g_assert (destroy_notify);
+
+        GIBaseInfo* glib_destroy_notify = g_irepository_find_by_name (NULL, "GLib", "DestroyNotify");
+        g_assert (glib_destroy_notify != NULL);
+        g_assert (g_base_info_get_type (glib_destroy_notify) == GI_INFO_TYPE_CALLBACK);
+
+        destroy_notify->closure = g_callable_info_prepare_closure ( (GICallableInfo*) glib_destroy_notify,
+                                                                    &destroy_notify->cif,
+                                                                    _pygi_destroy_notify_callback_closure,
+                                                                    NULL);
+
+        global_destroy_notify = destroy_notify;
+    }
+
+    return global_destroy_notify;
+}
+
 gboolean
 _pygi_marshal_from_py_interface_callback (PyGIInvokeState   *state,
                                           PyGICallableCache *callable_cache,
@@ -1329,17 +1406,14 @@ _pygi_marshal_from_py_interface_callback (PyGIInvokeState   *state,
     if (callback_cache->user_data_index > 0) {
         user_data_cache = callable_cache->args_cache[callback_cache->user_data_index];
         if (user_data_cache->py_arg_index < state->n_py_in_args) {
+            /* py_user_data is a borrowed reference. */
             py_user_data = PyTuple_GetItem (state->py_in_args, user_data_cache->py_arg_index);
             if (!py_user_data)
                 return FALSE;
-        } else {
-            py_user_data = Py_None;
-            Py_INCREF (Py_None);
         }
     }
 
     if (py_arg == Py_None && !(py_user_data == Py_None || py_user_data == NULL)) {
-        Py_DECREF (py_user_data);
         PyErr_Format (PyExc_TypeError,
                       "When passing None for a callback userdata must also be None");
 
@@ -1347,12 +1421,10 @@ _pygi_marshal_from_py_interface_callback (PyGIInvokeState   *state,
     }
 
     if (py_arg == Py_None) {
-        Py_XDECREF (py_user_data);
         return TRUE;
     }
 
     if (!PyCallable_Check (py_arg)) {
-        Py_XDECREF (py_user_data);
         PyErr_Format (PyExc_TypeError,
                       "Callback needs to be a function or method not %s",
                       py_arg->ob_type->tp_name);
@@ -1360,21 +1432,52 @@ _pygi_marshal_from_py_interface_callback (PyGIInvokeState   *state,
         return FALSE;
     }
 
-    if (callback_cache->destroy_notify_index > 0)
-        destroy_cache = callable_cache->args_cache[callback_cache->destroy_notify_index];
-
     callable_info = (GICallableInfo *)callback_cache->interface_info;
 
     closure = _pygi_make_native_closure (callable_info, callback_cache->scope, py_arg, py_user_data);
     arg->v_pointer = closure->closure;
+
+    /* The PyGICClosure instance is used as user data passed into the C function.
+     * The return trip to python will marshal this back and pull the python user data out.
+     */
     if (user_data_cache != NULL) {
         state->in_args[user_data_cache->c_arg_index].v_pointer = closure;
     }
 
-    if (destroy_cache) {
-        PyGICClosure *destroy_notify = _pygi_destroy_notify_create ();
-        state->in_args[destroy_cache->c_arg_index].v_pointer = destroy_notify->closure;
+    /* Setup a GDestroyNotify callback if this method supports it along with
+     * a user data field. The user data field is a requirement in order
+     * free resources and ref counts associated with this arguments closure.
+     * In case a user data field is not available, show a warning giving
+     * explicit information and setup a dummy notification to avoid a crash
+     * later on in _pygi_destroy_notify_callback_closure.
+     */
+    if (callback_cache->destroy_notify_index > 0) {
+        destroy_cache = callable_cache->args_cache[callback_cache->destroy_notify_index];
     }
+
+    if (destroy_cache) {
+        if (user_data_cache != NULL) {
+            PyGICClosure *destroy_notify = _pygi_destroy_notify_create ();
+            state->in_args[destroy_cache->c_arg_index].v_pointer = destroy_notify->closure;
+        } else {
+            gchar *msg = g_strdup_printf("Callables passed to %s will leak references because "
+                                         "the method does not support a user_data argument. "
+                                         "See: https://bugzilla.gnome.org/show_bug.cgi?id=685598",
+                                         callable_cache->name);
+            if (PyErr_WarnEx(PyExc_RuntimeWarning, msg, 2)) {
+                g_free(msg);
+                _pygi_invoke_closure_free(closure);
+                return FALSE;
+            }
+            g_free(msg);
+            state->in_args[destroy_cache->c_arg_index].v_pointer = _pygi_destroy_notify_dummy;
+        }
+    }
+
+    /* Store the PyGIClosure as extra args data so _pygi_marshal_cleanup_from_py_interface_callback
+     * can clean it up later for GI_SCOPE_TYPE_CALL based closures.
+     */
+    state->args_data[arg_cache->c_arg_index] = closure;
 
     return TRUE;
 }

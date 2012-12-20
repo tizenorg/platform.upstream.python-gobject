@@ -1,8 +1,10 @@
 # -*- Mode: Python -*-
 
 import unittest
+import warnings
 
-from gi.repository import GLib
+from gi.repository import GLib, GObject
+from gi import PyGIDeprecationWarning
 
 
 class Idle(GLib.Idle):
@@ -43,25 +45,35 @@ class TestSource(unittest.TestCase):
         timeout.set_callback(self.timeout_callback, loop)
         timeout.attach()
 
-    def testSources(self):
+    def test_sources(self):
         loop = GLib.MainLoop()
 
         self.setup_timeout(loop)
 
         idle = Idle(loop)
+        self.assertEqual(idle.get_context(), None)
         idle.attach()
+        self.assertEqual(idle.get_context(), GLib.main_context_default())
 
         self.pos = 0
 
         m = MySource()
+        self.assertEqual(m.get_context(), None)
         m.set_callback(self.my_callback, loop)
         m.attach()
+        self.assertEqual(m.get_context(), GLib.main_context_default())
 
         loop.run()
 
-        assert self.pos >= 0 and idle.count >= 0
+        m.destroy()
+        idle.destroy()
 
-    def testSourcePrepare(self):
+        self.assertGreater(self.pos, 0)
+        self.assertGreaterEqual(idle.count, 0)
+        self.assertTrue(m.is_destroyed())
+        self.assertTrue(idle.is_destroyed())
+
+    def test_source_prepare(self):
         # this test may not terminate if prepare() is wrapped incorrectly
         dispatched = [False]
         loop = GLib.MainLoop()
@@ -89,7 +101,7 @@ class TestSource(unittest.TestCase):
 
         assert dispatched[0]
 
-    def testIsDestroyedSimple(self):
+    def test_is_destroyed_simple(self):
         s = GLib.Source()
 
         self.assertFalse(s.is_destroyed())
@@ -103,7 +115,7 @@ class TestSource(unittest.TestCase):
         s.destroy()
         self.assertTrue(s.is_destroyed())
 
-    def testIsDestroyedContext(self):
+    def test_is_destroyed_context(self):
         def f():
             c = GLib.MainContext()
             s = GLib.Source()
@@ -113,11 +125,206 @@ class TestSource(unittest.TestCase):
         s = f()
         self.assertTrue(s.is_destroyed())
 
+    def test_remove(self):
+        s = GLib.idle_add(dir)
+        self.assertEqual(GLib.source_remove(s), True)
+        # s is now removed, should fail now
+        self.assertEqual(GLib.source_remove(s), False)
 
-class TestTimeout(unittest.TestCase):
-    def test504337(self):
+        # accepts large source IDs (they are unsigned)
+        self.assertEqual(GLib.source_remove(GObject.G_MAXINT32), False)
+        self.assertEqual(GLib.source_remove(GObject.G_MAXINT32 + 1), False)
+        self.assertEqual(GLib.source_remove(GObject.G_MAXUINT32), False)
+
+    def test_recurse_property(self):
+        s = GLib.Idle()
+        self.assertTrue(s.can_recurse in [False, True])
+        s.can_recurse = False
+        self.assertFalse(s.can_recurse)
+
+    def test_priority(self):
+        s = GLib.Idle()
+        self.assertEqual(s.priority, GLib.PRIORITY_DEFAULT_IDLE)
+        s.priority = GLib.PRIORITY_HIGH
+        self.assertEqual(s.priority, GLib.PRIORITY_HIGH)
+
+        s = GLib.Idle(GLib.PRIORITY_LOW)
+        self.assertEqual(s.priority, GLib.PRIORITY_LOW)
+
+        s = GLib.Timeout(1, GLib.PRIORITY_LOW)
+        self.assertEqual(s.priority, GLib.PRIORITY_LOW)
+
+        s = GLib.Source()
+        self.assertEqual(s.priority, GLib.PRIORITY_DEFAULT)
+
+    def test_get_current_time(self):
+        # Note, deprecated API
+        s = GLib.Idle()
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            time = s.get_current_time()
+            self.assertTrue(issubclass(w[0].category, PyGIDeprecationWarning))
+
+        self.assertTrue(isinstance(time, float))
+        # plausibility check, and check magnitude of result
+        self.assertGreater(time, 1300000000.0)
+        self.assertLess(time, 2000000000.0)
+
+    def test_add_remove_poll(self):
+        # FIXME: very shallow test, only verifies the API signature
+        pollfd = GLib.PollFD(99, GLib.IOCondition.IN | GLib.IOCondition.HUP)
+        self.assertEqual(pollfd.fd, 99)
+        source = GLib.Source()
+        source.add_poll(pollfd)
+        source.remove_poll(pollfd)
+
+    def test_out_of_scope_before_dispatch(self):
+        # https://bugzilla.gnome.org/show_bug.cgi?id=504337
         GLib.Timeout(20)
         GLib.Idle()
+
+
+class TestUserData(unittest.TestCase):
+    def test_idle_no_data(self):
+        ml = GLib.MainLoop()
+
+        def cb():
+            ml.quit()
+        id = GLib.idle_add(cb)
+        self.assertEqual(ml.get_context().find_source_by_id(id).priority,
+                         GLib.PRIORITY_DEFAULT_IDLE)
+        ml.run()
+
+    def test_timeout_no_data(self):
+        ml = GLib.MainLoop()
+
+        def cb():
+            ml.quit()
+        id = GLib.timeout_add(50, cb)
+        self.assertEqual(ml.get_context().find_source_by_id(id).priority,
+                         GLib.PRIORITY_DEFAULT)
+        ml.run()
+
+    def test_idle_data(self):
+        ml = GLib.MainLoop()
+
+        def cb(data):
+            data['called'] = True
+            ml.quit()
+        data = {}
+        id = GLib.idle_add(cb, data)
+        self.assertEqual(ml.get_context().find_source_by_id(id).priority,
+                         GLib.PRIORITY_DEFAULT_IDLE)
+        ml.run()
+        self.assertTrue(data['called'])
+
+    def test_idle_multidata(self):
+        ml = GLib.MainLoop()
+
+        def cb(data, data2):
+            data['called'] = True
+            data['data2'] = data2
+            ml.quit()
+        data = {}
+        id = GLib.idle_add(cb, data, 'hello')
+        self.assertEqual(ml.get_context().find_source_by_id(id).priority,
+                         GLib.PRIORITY_DEFAULT_IDLE)
+        ml.run()
+        self.assertTrue(data['called'])
+        self.assertEqual(data['data2'], 'hello')
+
+    def test_timeout_data(self):
+        ml = GLib.MainLoop()
+
+        def cb(data):
+            data['called'] = True
+            ml.quit()
+        data = {}
+        id = GLib.timeout_add(50, cb, data)
+        self.assertEqual(ml.get_context().find_source_by_id(id).priority,
+                         GLib.PRIORITY_DEFAULT)
+        ml.run()
+        self.assertTrue(data['called'])
+
+    def test_timeout_multidata(self):
+        ml = GLib.MainLoop()
+
+        def cb(data, data2):
+            data['called'] = True
+            data['data2'] = data2
+            ml.quit()
+        data = {}
+        id = GLib.timeout_add(50, cb, data, 'hello')
+        self.assertEqual(ml.get_context().find_source_by_id(id).priority,
+                         GLib.PRIORITY_DEFAULT)
+        ml.run()
+        self.assertTrue(data['called'])
+        self.assertEqual(data['data2'], 'hello')
+
+    def test_idle_no_data_priority(self):
+        ml = GLib.MainLoop()
+
+        def cb():
+            ml.quit()
+        id = GLib.idle_add(cb, priority=GLib.PRIORITY_HIGH)
+        self.assertEqual(ml.get_context().find_source_by_id(id).priority,
+                         GLib.PRIORITY_HIGH)
+        ml.run()
+
+    def test_timeout_no_data_priority(self):
+        ml = GLib.MainLoop()
+
+        def cb():
+            ml.quit()
+        id = GLib.timeout_add(50, cb, priority=GLib.PRIORITY_HIGH)
+        self.assertEqual(ml.get_context().find_source_by_id(id).priority,
+                         GLib.PRIORITY_HIGH)
+        ml.run()
+
+    def test_idle_data_priority(self):
+        ml = GLib.MainLoop()
+
+        def cb(data):
+            data['called'] = True
+            ml.quit()
+        data = {}
+        id = GLib.idle_add(cb, data, priority=GLib.PRIORITY_HIGH)
+        self.assertEqual(ml.get_context().find_source_by_id(id).priority,
+                         GLib.PRIORITY_HIGH)
+        ml.run()
+        self.assertTrue(data['called'])
+
+    def test_timeout_data_priority(self):
+        ml = GLib.MainLoop()
+
+        def cb(data):
+            data['called'] = True
+            ml.quit()
+        data = {}
+        id = GLib.timeout_add(50, cb, data, priority=GLib.PRIORITY_HIGH)
+        self.assertEqual(ml.get_context().find_source_by_id(id).priority,
+                         GLib.PRIORITY_HIGH)
+        ml.run()
+        self.assertTrue(data['called'])
+
+    def cb_no_data(self):
+        self.loop.quit()
+
+    def test_idle_method_callback_no_data(self):
+        self.loop = GLib.MainLoop()
+        GLib.idle_add(self.cb_no_data)
+        self.loop.run()
+
+    def cb_with_data(self, data):
+        data['called'] = True
+        self.loop.quit()
+
+    def test_idle_method_callback_with_data(self):
+        self.loop = GLib.MainLoop()
+        data = {}
+        GLib.idle_add(self.cb_with_data, data)
+        self.loop.run()
+        self.assertTrue(data['called'])
 
 
 if __name__ == '__main__':

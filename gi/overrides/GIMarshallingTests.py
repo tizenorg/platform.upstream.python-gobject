@@ -19,9 +19,9 @@
 # USA
 
 from ..overrides import override
-from ..importer import modules
+from ..module import get_introspection_module
 
-GIMarshallingTests = modules['GIMarshallingTests']._introspection_module
+GIMarshallingTests = get_introspection_module('GIMarshallingTests')
 
 __all__ = []
 
@@ -63,6 +63,7 @@ class OverridesObject(GIMarshallingTests.OverridesObject):
         return self
 
     def method(self):
+        """Overridden doc string."""
         return GIMarshallingTests.OverridesObject.method(self) / 7
 
 OverridesObject = override(OverridesObject)

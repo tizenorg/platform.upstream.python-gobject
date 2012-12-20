@@ -4,7 +4,7 @@ import gc
 import unittest
 import sys
 
-from gi.repository import GObject
+from gi.repository import GObject, GLib
 from gi._gobject import signalhelper
 import testhelper
 from compathelper import _long
@@ -49,11 +49,11 @@ class TestChaining(unittest.TestCase):
 
         assert args[2:] == (1, 2, 3)
 
-    def testChaining(self):
+    def test_chaining(self):
         self.inst.emit("my_signal", 42)
         assert self.inst.arg == 42
 
-    def testChaining2(self):
+    def test_chaining2(self):
         inst2 = D()
         inst2.emit("my_signal", 44)
         assert inst2.arg == 44
@@ -63,18 +63,24 @@ class TestChaining(unittest.TestCase):
 
 
 class TestGSignalsError(unittest.TestCase):
-    def testInvalidType(self, *args):
+    def test_invalid_type(self, *args):
         def foo():
             class Foo(GObject.GObject):
                 __gsignals__ = None
         self.assertRaises(TypeError, foo)
         gc.collect()
 
-    def testInvalidName(self, *args):
+    def test_invalid_name(self, *args):
         def foo():
             class Foo(GObject.GObject):
                 __gsignals__ = {'not-exists': 'override'}
-        self.assertRaises(TypeError, foo)
+        # do not stumble over the warning thrown by GLib
+        old_mask = GLib.log_set_always_fatal(GLib.LogLevelFlags.LEVEL_CRITICAL |
+                                             GLib.LogLevelFlags.LEVEL_ERROR)
+        try:
+            self.assertRaises(TypeError, foo)
+        finally:
+            GLib.log_set_always_fatal(old_mask)
         gc.collect()
 
 
@@ -294,7 +300,7 @@ class TestClosures(unittest.TestCase):
         self.assertEqual(inst.a, 1)
         gc.collect()
 
-    def testGString(self):
+    def test_gstring(self):
         class C(GObject.GObject):
             __gsignals__ = {'my_signal': (GObject.SignalFlags.RUN_LAST, GObject.TYPE_GSTRING,
                                           (GObject.TYPE_GSTRING,))}
@@ -592,7 +598,8 @@ class TestSignalDecorator(unittest.TestCase):
 
 class TestSignalConnectors(unittest.TestCase):
     class CustomButton(GObject.GObject):
-        value = 0
+        on_notify_called = False
+        value = GObject.Property(type=int)
 
         @GObject.Signal(arg_types=(int,))
         def clicked(self, value):
@@ -605,6 +612,16 @@ class TestSignalConnectors(unittest.TestCase):
     def on_clicked(self, obj, value):
         self.obj = obj
         self.value = value
+
+    def test_signal_notify(self):
+        def on_notify(obj, param):
+            obj.on_notify_called = True
+
+        obj = self.CustomButton()
+        obj.connect('notify', on_notify)
+        self.assertFalse(obj.on_notify_called)
+        obj.notify('value')
+        self.assertTrue(obj.on_notify_called)
 
     def test_signal_emit(self):
         # standard callback connection with different forms of emit.
@@ -653,6 +670,49 @@ class TestSignalConnectors(unittest.TestCase):
         self.assertEqual(self.value, 3)
 
 
+class TestInstallSignals(unittest.TestCase):
+    # These tests only test how signalhelper.install_signals works
+    # with the __gsignals__ dict and therefore does not need to use
+    # GObject as a base class because that would automatically call
+    # install_signals within the meta-class.
+    class Base(object):
+        __gsignals__ = {'test': (0, None, tuple())}
+
+    class Sub1(Base):
+        pass
+
+    class Sub2(Base):
+        @GObject.Signal
+        def sub2test(self):
+            pass
+
+    def setUp(self):
+        self.assertEqual(len(self.Base.__gsignals__), 1)
+        signalhelper.install_signals(self.Base)
+        self.assertEqual(len(self.Base.__gsignals__), 1)
+
+    def test_subclass_gets_empty_gsignals_dict(self):
+        # Installing signals will add the __gsignals__ dict to a class
+        # if it doesn't already exists.
+        self.assertFalse('__gsignals__' in self.Sub1.__dict__)
+        signalhelper.install_signals(self.Sub1)
+        self.assertTrue('__gsignals__' in self.Sub1.__dict__)
+        # Sub1 should only contain an empty signals dict, this tests:
+        # https://bugzilla.gnome.org/show_bug.cgi?id=686496
+        self.assertEqual(self.Sub1.__dict__['__gsignals__'], {})
+
+    def test_subclass_with_decorator_gets_gsignals_dict(self):
+        self.assertFalse('__gsignals__' in self.Sub2.__dict__)
+        signalhelper.install_signals(self.Sub2)
+        self.assertTrue('__gsignals__' in self.Sub2.__dict__)
+        self.assertEqual(len(self.Base.__gsignals__), 1)
+        self.assertEqual(len(self.Sub2.__gsignals__), 1)
+        self.assertTrue('sub2test' in self.Sub2.__gsignals__)
+
+        # Make sure the vfunc was added
+        self.assertTrue(hasattr(self.Sub2, 'do_sub2test'))
+
+
 # For this test to work with both python2 and 3 we need to dynamically
 # exec the given code due to the new syntax causing an error in python 2.
 annotated_class_code = """
@@ -689,6 +749,60 @@ class TestPython3Signals(unittest.TestCase):
                              (int, float))
             self.assertEqual(self.AnnotatedClass.sig2_with_return.return_type,
                              str)
+
+
+class TestSignalModuleLevelFunctions(unittest.TestCase):
+    @unittest.skipIf(sys.version_info < (2, 7), 'Requires Python >= 2.7')
+    def test_signal_list_ids_with_invalid_type(self):
+        with self.assertRaisesRegex(TypeError, 'type must be instantiable or an interface.*'):
+            GObject.signal_list_ids(GObject.TYPE_INVALID)
+
+    @unittest.skipIf(sys.version_info < (2, 7), 'Requires Python >= 2.7')
+    def test_signal_list_ids(self):
+        with self.assertRaisesRegex(TypeError, 'type must be instantiable or an interface.*'):
+            GObject.signal_list_ids(GObject.TYPE_INT)
+
+        ids = GObject.signal_list_ids(C)
+        self.assertEqual(len(ids), 1)
+        # Note canonicalized names
+        self.assertEqual(GObject.signal_name(ids[0]), 'my-signal')
+        # There is no signal 0 in gobject
+        self.assertEqual(GObject.signal_name(0), None)
+
+    @unittest.skipIf(sys.version_info < (2, 7), 'Requires Python >= 2.7')
+    def test_signal_lookup_with_invalid_type(self):
+        with self.assertRaisesRegex(TypeError, 'type must be instantiable or an interface.*'):
+            GObject.signal_lookup('NOT_A_SIGNAL_NAME', GObject.TYPE_INVALID)
+
+    @unittest.skipIf(sys.version_info < (2, 7), 'Requires Python >= 2.7')
+    def test_signal_lookup(self):
+        ids = GObject.signal_list_ids(C)
+        self.assertEqual(ids[0], GObject.signal_lookup('my_signal', C))
+        self.assertEqual(ids[0], GObject.signal_lookup('my-signal', C))
+
+        with self.assertRaisesRegex(TypeError, 'type must be instantiable or an interface.*'):
+            GObject.signal_lookup('NOT_A_SIGNAL_NAME', GObject.TYPE_INT)
+
+        # Invalid signal names return 0 instead of raising
+        self.assertEqual(GObject.signal_lookup('NOT_A_SIGNAL_NAME', C),
+                         0)
+
+    def test_signal_query(self):
+        my_signal_id, = GObject.signal_list_ids(C)
+
+        # Form is: (id, name, gtype, arg_count, return_type, (arg_type1, ...))
+        my_signal_expected_query_result = [my_signal_id, 'my-signal', C.__gtype__,
+                                           1, GObject.TYPE_NONE, (GObject.TYPE_INT,)]
+        # signal_query(name, type)
+        self.assertSequenceEqual(GObject.signal_query('my-signal', C),
+                                 my_signal_expected_query_result)
+        # signal_query(signal_id)
+        self.assertSequenceEqual(GObject.signal_query(my_signal_id),
+                                 my_signal_expected_query_result)
+        # invalid query returns None instead of raising
+        self.assertEqual(GObject.signal_query(0), None)
+        self.assertEqual(GObject.signal_query('NOT_A_SIGNAL', C),
+                         None)
 
 
 if __name__ == '__main__':

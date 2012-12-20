@@ -27,7 +27,6 @@
 #include <pythread.h>
 #include "pyglib.h"
 #include "pyglib-private.h"
-#include "pygmaincontext.h"
 #include "pygoptioncontext.h"
 #include "pygoptiongroup.h"
 
@@ -411,20 +410,6 @@ pyglib_register_exception_for_domain(gchar *name,
 }
 
 /**
- * pyglib_main_context_new:
- * @context: a GMainContext.
- *
- * Creates a wrapper for a GMainContext.
- *
- * Returns: the GMainContext wrapper.
- */
-PyObject *
-pyglib_main_context_new(GMainContext *context)
-{
-    return _PyGLib_API->main_context_new(context);
-}
-
-/**
  * pyg_option_group_transfer_group:
  * @group: a GOptionGroup wrapper
  *
@@ -484,22 +469,6 @@ PyObject *
 pyglib_option_context_new (GOptionContext *context)
 {
     return _PyGLib_API->option_context_new(context);
-}
-
-/**
- * pyglib_option_context_new:
- * @context: a GTimeVal struct
- *
- * Converts a GTimeVal struct to a python float
- *
- * Returns: a float representing the timeval
- */
-PyObject *
-pyglib_float_from_timeval(GTimeVal timeval)
-{
-    double ret;
-    ret = (double)timeval.tv_sec + (double)timeval.tv_usec * 0.000001;
-    return PyFloat_FromDouble(ret);
 }
 
 

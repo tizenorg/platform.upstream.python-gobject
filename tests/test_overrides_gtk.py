@@ -2,8 +2,6 @@
 # vim: tabstop=4 shiftwidth=4 expandtab
 
 import unittest
-import ctypes
-import sys
 
 from compathelper import _unicode, _bytes
 
@@ -16,19 +14,6 @@ try:
     Gtk  # pyflakes
 except ImportError:
     Gtk = None
-
-
-class RawTreeIter(ctypes.Structure):
-    """Class used for testing Gtk.TreeIter raw data."""
-    _fields_ = [('stamp', ctypes.c_int),
-                ('user_data', ctypes.c_void_p),
-                ('user_data2', ctypes.c_void_p),
-                ('user_data3', ctypes.c_void_p)]
-
-    @classmethod
-    def from_iter(cls, iter):
-        offset = sys.getsizeof(object())  # size of PyObject_HEAD
-        return ctypes.POINTER(cls).from_address(id(iter) + offset)
 
 
 @unittest.skipUnless(Gtk, 'Gtk not available')
@@ -292,9 +277,15 @@ class TestGtk(unittest.TestCase):
         self.assertEqual('color selection dialog test', dialog.get_title())
 
         # Gtk.FileChooserDialog
-        dialog = Gtk.FileChooserDialog(title='file chooser dialog test',
-                                       buttons=('test-button1', 1),
-                                       action=Gtk.FileChooserAction.SAVE)
+        # might cause a GVFS warning, do not break on this
+        old_mask = GLib.log_set_always_fatal(
+            GLib.LogLevelFlags.LEVEL_CRITICAL | GLib.LogLevelFlags.LEVEL_ERROR)
+        try:
+            dialog = Gtk.FileChooserDialog(title='file chooser dialog test',
+                                           buttons=('test-button1', 1),
+                                           action=Gtk.FileChooserAction.SAVE)
+        finally:
+            GLib.log_set_always_fatal(old_mask)
         self.assertTrue(isinstance(dialog, Gtk.Dialog))
         self.assertTrue(isinstance(dialog, Gtk.Window))
 
@@ -1324,13 +1315,14 @@ class TestTreeView(unittest.TestCase):
         # will raise a Gtk-CRITICAL which we ignore for now
         old_mask = GLib.log_set_always_fatal(
             GLib.LogLevelFlags.LEVEL_WARNING | GLib.LogLevelFlags.LEVEL_ERROR)
-        view.set_cursor(store[1].path)
-        view.set_cursor(str(store[1].path))
+        try:
+            view.set_cursor(store[1].path)
+            view.set_cursor(str(store[1].path))
 
-        view.get_cell_area(store[1].path)
-        view.get_cell_area(str(store[1].path))
-
-        GLib.log_set_always_fatal(old_mask)
+            view.get_cell_area(store[1].path)
+            view.get_cell_area(str(store[1].path))
+        finally:
+            GLib.log_set_always_fatal(old_mask)
 
     def test_tree_view_column(self):
         cell = Gtk.CellRendererText()
@@ -1361,10 +1353,12 @@ class TestTreeView(unittest.TestCase):
         # might cause a Pango warning, do not break on this
         old_mask = GLib.log_set_always_fatal(
             GLib.LogLevelFlags.LEVEL_CRITICAL | GLib.LogLevelFlags.LEVEL_ERROR)
-        # causes the widget to get realized and cellN.props.text receive a
-        # value, otherwise it will be None.
-        tree.get_preferred_size()
-        GLib.log_set_always_fatal(old_mask)
+        try:
+            # causes the widget to get realized and cellN.props.text receive a
+            # value, otherwise it will be None.
+            tree.get_preferred_size()
+        finally:
+            GLib.log_set_always_fatal(old_mask)
 
         self.assertEqual(tree.get_column(0).get_title(), 'Head1')
         self.assertEqual(tree.get_column(1).get_title(), 'Head2')
@@ -1396,10 +1390,12 @@ class TestTreeView(unittest.TestCase):
         # might cause a Pango warning, do not break on this
         old_mask = GLib.log_set_always_fatal(
             GLib.LogLevelFlags.LEVEL_CRITICAL | GLib.LogLevelFlags.LEVEL_ERROR)
-        # This will make cell.props.text receive a value, otherwise it
-        # will be None.
-        treeview.get_preferred_size()
-        GLib.log_set_always_fatal(old_mask)
+        try:
+            # This will make cell.props.text receive a value, otherwise it
+            # will be None.
+            treeview.get_preferred_size()
+        finally:
+            GLib.log_set_always_fatal(old_mask)
 
         self.assertTrue(cell.props.text in directors)
 
@@ -1431,32 +1427,6 @@ class TestTreeView(unittest.TestCase):
         (m, s) = sel.get_selected()
         self.assertEqual(m, store)
         self.assertEqual(store.get_path(s), firstpath)
-
-    def test_tree_iter_user_data_int(self):
-        pyiter = Gtk.TreeIter()
-        rawiter = RawTreeIter.from_iter(pyiter)
-
-        initial_ref_count = sys.getrefcount(1)
-        pyiter.user_data = 1
-
-        # verify setting int value increases refcount of the "1" object
-        self.assertEqual(sys.getrefcount(1), initial_ref_count + 1)
-        # verify the address of the '1' object is what user_data is actually set to.
-        self.assertEqual(id(1), rawiter.contents.user_data)
-
-    def test_tree_iter_user_data_null(self):
-        pyiter = Gtk.TreeIter()
-        rawiter = RawTreeIter.from_iter(pyiter)
-
-        self.assertEqual(pyiter.user_data, None)
-        self.assertEqual(rawiter.contents.user_data, None)
-
-        # Setting user_data to None should not increase None's ref count.
-        # and the raw iters user_data should also come back as None/NULL.
-        initial_ref_count = sys.getrefcount(None)
-        pyiter.user_data = None
-        self.assertEqual(sys.getrefcount(None), initial_ref_count)
-        self.assertEqual(rawiter.contents.user_data, None)
 
 
 @unittest.skipUnless(Gtk, 'Gtk not available')

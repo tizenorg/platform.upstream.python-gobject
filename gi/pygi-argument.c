@@ -83,6 +83,15 @@ _pygi_hash_pointer_to_arg (GIArgument *arg,
         case GI_TYPE_TAG_INT32:
             arg->v_int32 = GPOINTER_TO_INT (arg->v_pointer);
             break;
+        case GI_TYPE_TAG_UINT8:
+            arg->v_uint8 = GPOINTER_TO_UINT (arg->v_pointer);
+            break;
+        case GI_TYPE_TAG_UINT16:
+            arg->v_uint16 = GPOINTER_TO_UINT (arg->v_pointer);
+            break;
+        case GI_TYPE_TAG_UINT32:
+            arg->v_uint32 = GPOINTER_TO_UINT (arg->v_pointer);
+            break;
         case GI_TYPE_TAG_UTF8:
         case GI_TYPE_TAG_FILENAME:
         case GI_TYPE_TAG_INTERFACE:
@@ -810,11 +819,14 @@ _pygi_argument_to_array (GIArgument  *arg,
                     g_assert (callable_info);
                     length_arg_info = g_callable_info_get_arg (callable_info, length_arg_pos);
                     length_type_info = g_arg_info_get_type (length_arg_info);
+                    g_base_info_unref ( (GIBaseInfo *) length_arg_info);
                     if (!gi_argument_to_gssize (args[length_arg_pos],
                                                 g_type_info_get_tag (length_type_info),
                                                 &length)) {
+                        g_base_info_unref ( (GIBaseInfo *) length_type_info);
                         return NULL;
                     }
+                    g_base_info_unref ( (GIBaseInfo *) length_type_info);
                 }
             }
 
@@ -867,7 +879,15 @@ _pygi_argument_from_object (PyObject   *object,
     switch (type_tag) {
         case GI_TYPE_TAG_VOID:
             g_warn_if_fail (transfer == GI_TRANSFER_NOTHING);
-            arg.v_pointer = object == Py_None ? NULL : object;
+            if (object == Py_None) {
+                arg.v_pointer = NULL;
+            } else if (!PYGLIB_PyLong_Check(object)  && !PyLong_Check(object)) {
+                PyErr_SetString(PyExc_TypeError,
+                    "Pointer assignment is restricted to integer values. "
+                    "See: https://bugzilla.gnome.org/show_bug.cgi?id=683599");
+            } else {
+                arg.v_pointer = PyLong_AsVoidPtr (object);
+            }
             break;
         case GI_TYPE_TAG_BOOLEAN:
         {
@@ -1126,7 +1146,11 @@ _pygi_argument_from_object (PyObject   *object,
             is_zero_terminated = g_type_info_is_zero_terminated (type_info);
             item_type_info = g_type_info_get_param_type (type_info, 0);
 
-            item_size = _pygi_g_type_info_size (item_type_info);
+            /* we handle arrays that are really strings specially, see below */
+            if (g_type_info_get_tag (item_type_info) == GI_TYPE_TAG_UINT8)
+               item_size = 1;
+            else
+               item_size = sizeof (GIArgument);
 
             array = g_array_sized_new (is_zero_terminated, FALSE, item_size, length);
             if (array == NULL) {
@@ -1260,9 +1284,7 @@ array_success:
 
                         arg.v_pointer = closure;
                     } else if (g_struct_info_is_foreign (info)) {
-                        PyObject *result;
-                        result = pygi_struct_foreign_convert_to_g_argument (
-                                     object, info, transfer, &arg);
+                        pygi_struct_foreign_convert_to_g_argument (object, info, transfer, &arg);
                     } else if (g_type_is_a (type, G_TYPE_BOXED)) {
                         if (pyg_boxed_check (object, type)) {
                             arg.v_pointer = pyg_boxed_get (object, void);
@@ -1275,7 +1297,12 @@ array_success:
                     } else if (g_type_is_a (type, G_TYPE_POINTER) || 
                                g_type_is_a (type, G_TYPE_VARIANT) || 
                                type == G_TYPE_NONE) {
-			g_warn_if_fail (g_type_is_a (type, G_TYPE_VARIANT) || !g_type_info_is_pointer (type_info) || transfer == GI_TRANSFER_NOTHING);
+                        g_warn_if_fail (g_type_is_a (type, G_TYPE_VARIANT) || !g_type_info_is_pointer (type_info) || transfer == GI_TRANSFER_NOTHING);
+
+                        if (g_type_is_a (type, G_TYPE_VARIANT) && pyg_type_from_object (object) != G_TYPE_VARIANT) {
+                            PyErr_SetString (PyExc_TypeError, "expected GLib.Variant");
+                            break;
+                        }
                         arg.v_pointer = pyg_pointer_get (object, void);
                     } else {
                         PyErr_Format (PyExc_NotImplementedError, "structure type '%s' is not supported yet", g_type_name (type));
@@ -1521,15 +1548,22 @@ _pygi_argument_to_object (GIArgument  *arg,
     type_tag = g_type_info_get_tag (type_info);
     switch (type_tag) {
         case GI_TYPE_TAG_VOID:
+        {
             if (g_type_info_is_pointer (type_info) &&
                     (arg->v_pointer != NULL)) {
-                /* Raw Python objects are passed to void* args */
                 g_warn_if_fail (transfer == GI_TRANSFER_NOTHING);
-                object = arg->v_pointer;
-            } else
+                object = PyLong_FromVoidPtr (arg->v_pointer);
+            } else {
+                /* None is used instead of zero for parity with ctypes.
+                 * This is helpful in case the values are being used for
+                 * actual memory addressing, in which case None will
+                 * raise as opposed to 0 which will crash.
+                 */
                 object = Py_None;
-            Py_XINCREF (object);
+                Py_INCREF (object);
+            }
             break;
+        }
         case GI_TYPE_TAG_BOOLEAN:
         {
             object = PyBool_FromLong (arg->v_boolean);
@@ -1991,6 +2025,11 @@ _pygi_argument_from_g_value(const GValue *value,
     GIArgument arg = { 0, };
 
     GITypeTag type_tag = g_type_info_get_tag (type_info);
+
+    /* For the long handling: long can be equivalent to
+       int32 or int64, depending on the architecture, but
+       gi doesn't tell us (and same for ulong)
+    */
     switch (type_tag) {
         case GI_TYPE_TAG_BOOLEAN:
             arg.v_boolean = g_value_get_boolean (value);
@@ -1998,18 +2037,30 @@ _pygi_argument_from_g_value(const GValue *value,
         case GI_TYPE_TAG_INT8:
         case GI_TYPE_TAG_INT16:
         case GI_TYPE_TAG_INT32:
-            arg.v_int = g_value_get_int (value);
+	    if (g_type_is_a (G_VALUE_TYPE (value), G_TYPE_LONG))
+		arg.v_int = g_value_get_long (value);
+	    else
+		arg.v_int = g_value_get_int (value);
             break;
         case GI_TYPE_TAG_INT64:
-            arg.v_int64 = g_value_get_int64 (value);
+	    if (g_type_is_a (G_VALUE_TYPE (value), G_TYPE_LONG))
+		arg.v_int64 = g_value_get_long (value);
+	    else
+		arg.v_int64 = g_value_get_int64 (value);
             break;
         case GI_TYPE_TAG_UINT8:
         case GI_TYPE_TAG_UINT16:
         case GI_TYPE_TAG_UINT32:
-            arg.v_uint = g_value_get_uint (value);
+	    if (g_type_is_a (G_VALUE_TYPE (value), G_TYPE_ULONG))
+		arg.v_uint = g_value_get_ulong (value);
+	    else
+		arg.v_uint = g_value_get_uint (value);
             break;
         case GI_TYPE_TAG_UINT64:
-            arg.v_uint64 = g_value_get_uint64 (value);
+	    if (g_type_is_a (G_VALUE_TYPE (value), G_TYPE_ULONG))
+		arg.v_uint64 = g_value_get_ulong (value);
+	    else
+		arg.v_uint64 = g_value_get_uint64 (value);
             break;
         case GI_TYPE_TAG_UNICHAR:
             arg.v_uint32 = g_value_get_schar (value);

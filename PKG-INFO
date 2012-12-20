@@ -1,6 +1,6 @@
 Metadata-Version: 1.0
 Name: PyGObject
-Version: 3.4.0
+Version: 3.7.3
 Summary: Python bindings for GObject
 Home-page: http://www.pygtk.org/
 Author: James Henstridge
@@ -8,7 +8,7 @@ Author-email: james@daa.com.au
 Maintainer: Johan Dahlin
 Maintainer-email: johan@gnome.org
 License: GNU LGPL
-Download-url: ftp://ftp.gnome.org/pub/GNOME/sources/pygobject/3.4/pygobject-3.4.0.tar.gz
+Download-url: ftp://ftp.gnome.org/pub/GNOME/sources/pygobject/3.7/pygobject-3.7.3.tar.gz
 Description: Python bindings for GLib and GObject
 Platform: POSIX, Windows
 Classifier: Development Status :: 5 - Production/Stable

@@ -42,10 +42,10 @@ _gi_la_SOURCES = \
 	pygi-info.h \
 	pygi-foreign.c \
 	pygi-foreign.h \
-	pygi-foreign-gvariant.c \
-	pygi-foreign-gvariant.h \
 	pygi-struct.c \
 	pygi-struct.h \
+	pygi-source.c \
+	pygi-source.h \
 	pygi-argument.c \
 	pygi-argument.h \
 	pygi-type.c \
@@ -56,8 +56,6 @@ _gi_la_SOURCES = \
 	pygi-closure.h \
 	pygi-ccallback.c \
 	pygi-ccallback.h \
-	pygi-callbacks.c \
-	pygi-callbacks.h \
 	pygi.h \
 	pygi-private.h \
 	pygi-property.c \
@@ -117,7 +115,7 @@ _gi_cairo_la_LDFLAGS = \
 # build directory, which the Python interpreter can load
 # directly without having to know how to parse .la files.
 .la.so:
-	$(LN_S) .libs/$@ $@ || true
+	$(LN_S) -f .libs/$@ $@
 
 # if we build in a separate tree, we need to symlink the *.py files from the
 # source tree; Python does not accept the extensions and modules in different

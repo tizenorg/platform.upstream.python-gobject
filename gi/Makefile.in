@@ -105,13 +105,12 @@ am__DEPENDENCIES_1 =
 _gi_la_DEPENDENCIES = $(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
 	$(top_builddir)/gi/_glib/libpyglib-gi-2.0-@PYTHON_BASENAME@.la
 am__gi_la_OBJECTS = _gi_la-pygi-repository.lo _gi_la-pygi-info.lo \
-	_gi_la-pygi-foreign.lo _gi_la-pygi-foreign-gvariant.lo \
-	_gi_la-pygi-struct.lo _gi_la-pygi-argument.lo \
+	_gi_la-pygi-foreign.lo _gi_la-pygi-struct.lo \
+	_gi_la-pygi-source.lo _gi_la-pygi-argument.lo \
 	_gi_la-pygi-type.lo _gi_la-pygi-boxed.lo \
 	_gi_la-pygi-closure.lo _gi_la-pygi-ccallback.lo \
-	_gi_la-pygi-callbacks.lo _gi_la-pygi-property.lo \
-	_gi_la-pygi-signal-closure.lo _gi_la-gimodule.lo \
-	_gi_la-pygi-invoke.lo _gi_la-pygi-cache.lo \
+	_gi_la-pygi-property.lo _gi_la-pygi-signal-closure.lo \
+	_gi_la-gimodule.lo _gi_la-pygi-invoke.lo _gi_la-pygi-cache.lo \
 	_gi_la-pygi-marshal-from-py.lo _gi_la-pygi-marshal-to-py.lo \
 	_gi_la-pygi-marshal-cleanup.lo
 _gi_la_OBJECTS = $(am__gi_la_OBJECTS)
@@ -220,6 +219,9 @@ CAIRO_LIBS = @CAIRO_LIBS@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
+CODE_COVERAGE_CFLAGS = @CODE_COVERAGE_CFLAGS@
+CODE_COVERAGE_ENABLED = @CODE_COVERAGE_ENABLED@
+CODE_COVERAGE_LDFLAGS = @CODE_COVERAGE_LDFLAGS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
 CYGPATH_W = @CYGPATH_W@
@@ -237,6 +239,7 @@ EXEEXT = @EXEEXT@
 FFI_CFLAGS = @FFI_CFLAGS@
 FFI_LIBS = @FFI_LIBS@
 FGREP = @FGREP@
+GENHTML = @GENHTML@
 GIO_CFLAGS = @GIO_CFLAGS@
 GIO_LIBS = @GIO_LIBS@
 GI_CFLAGS = @GI_CFLAGS@
@@ -256,6 +259,7 @@ INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
 INTROSPECTION_COMPILER = @INTROSPECTION_COMPILER@
 INTROSPECTION_SCANNER = @INTROSPECTION_SCANNER@
+LCOV = @LCOV@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
 LIBFFI_PC = @LIBFFI_PC@
@@ -265,7 +269,6 @@ LIBTOOL = @LIBTOOL@
 LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
-MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
 MKDIR_P = @MKDIR_P@
@@ -398,10 +401,10 @@ _gi_la_SOURCES = \
 	pygi-info.h \
 	pygi-foreign.c \
 	pygi-foreign.h \
-	pygi-foreign-gvariant.c \
-	pygi-foreign-gvariant.h \
 	pygi-struct.c \
 	pygi-struct.h \
+	pygi-source.c \
+	pygi-source.h \
 	pygi-argument.c \
 	pygi-argument.h \
 	pygi-type.c \
@@ -412,8 +415,6 @@ _gi_la_SOURCES = \
 	pygi-closure.h \
 	pygi-ccallback.c \
 	pygi-ccallback.h \
-	pygi-callbacks.c \
-	pygi-callbacks.h \
 	pygi.h \
 	pygi-private.h \
 	pygi-property.c \
@@ -476,7 +477,7 @@ all: all-recursive
 
 .SUFFIXES:
 .SUFFIXES: .c .la .lo .o .obj .so
-$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am  $(am__configure_deps)
+$(srcdir)/Makefile.in:  $(srcdir)/Makefile.am  $(am__configure_deps)
 	@for dep in $?; do \
 	  case '$(am__configure_deps)' in \
 	    *$$dep*) \
@@ -501,9 +502,9 @@ Makefile: $(srcdir)/Makefile.in $(top_builddir)/config.status
 $(top_builddir)/config.status: $(top_srcdir)/configure $(CONFIG_STATUS_DEPENDENCIES)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 
-$(top_srcdir)/configure: @MAINTAINER_MODE_TRUE@ $(am__configure_deps)
+$(top_srcdir)/configure:  $(am__configure_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
-$(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
+$(ACLOCAL_M4):  $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
 install-pygiLTLIBRARIES: $(pygi_LTLIBRARIES)
@@ -554,10 +555,8 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_gi_la-pygi-argument.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_gi_la-pygi-boxed.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_gi_la-pygi-cache.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_gi_la-pygi-callbacks.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_gi_la-pygi-ccallback.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_gi_la-pygi-closure.Plo@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_gi_la-pygi-foreign-gvariant.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_gi_la-pygi-foreign.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_gi_la-pygi-info.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_gi_la-pygi-invoke.Plo@am__quote@
@@ -567,6 +566,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_gi_la-pygi-property.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_gi_la-pygi-repository.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_gi_la-pygi-signal-closure.Plo@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_gi_la-pygi-source.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_gi_la-pygi-struct.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/_gi_la-pygi-type.Plo@am__quote@
 
@@ -612,19 +612,19 @@ _gi_la-pygi-foreign.lo: pygi-foreign.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_gi_la_CPPFLAGS) $(CPPFLAGS) $(_gi_la_CFLAGS) $(CFLAGS) -c -o _gi_la-pygi-foreign.lo `test -f 'pygi-foreign.c' || echo '$(srcdir)/'`pygi-foreign.c
 
-_gi_la-pygi-foreign-gvariant.lo: pygi-foreign-gvariant.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_gi_la_CPPFLAGS) $(CPPFLAGS) $(_gi_la_CFLAGS) $(CFLAGS) -MT _gi_la-pygi-foreign-gvariant.lo -MD -MP -MF $(DEPDIR)/_gi_la-pygi-foreign-gvariant.Tpo -c -o _gi_la-pygi-foreign-gvariant.lo `test -f 'pygi-foreign-gvariant.c' || echo '$(srcdir)/'`pygi-foreign-gvariant.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/_gi_la-pygi-foreign-gvariant.Tpo $(DEPDIR)/_gi_la-pygi-foreign-gvariant.Plo
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='pygi-foreign-gvariant.c' object='_gi_la-pygi-foreign-gvariant.lo' libtool=yes @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_gi_la_CPPFLAGS) $(CPPFLAGS) $(_gi_la_CFLAGS) $(CFLAGS) -c -o _gi_la-pygi-foreign-gvariant.lo `test -f 'pygi-foreign-gvariant.c' || echo '$(srcdir)/'`pygi-foreign-gvariant.c
-
 _gi_la-pygi-struct.lo: pygi-struct.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_gi_la_CPPFLAGS) $(CPPFLAGS) $(_gi_la_CFLAGS) $(CFLAGS) -MT _gi_la-pygi-struct.lo -MD -MP -MF $(DEPDIR)/_gi_la-pygi-struct.Tpo -c -o _gi_la-pygi-struct.lo `test -f 'pygi-struct.c' || echo '$(srcdir)/'`pygi-struct.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/_gi_la-pygi-struct.Tpo $(DEPDIR)/_gi_la-pygi-struct.Plo
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='pygi-struct.c' object='_gi_la-pygi-struct.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_gi_la_CPPFLAGS) $(CPPFLAGS) $(_gi_la_CFLAGS) $(CFLAGS) -c -o _gi_la-pygi-struct.lo `test -f 'pygi-struct.c' || echo '$(srcdir)/'`pygi-struct.c
+
+_gi_la-pygi-source.lo: pygi-source.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_gi_la_CPPFLAGS) $(CPPFLAGS) $(_gi_la_CFLAGS) $(CFLAGS) -MT _gi_la-pygi-source.lo -MD -MP -MF $(DEPDIR)/_gi_la-pygi-source.Tpo -c -o _gi_la-pygi-source.lo `test -f 'pygi-source.c' || echo '$(srcdir)/'`pygi-source.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/_gi_la-pygi-source.Tpo $(DEPDIR)/_gi_la-pygi-source.Plo
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='pygi-source.c' object='_gi_la-pygi-source.lo' libtool=yes @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_gi_la_CPPFLAGS) $(CPPFLAGS) $(_gi_la_CFLAGS) $(CFLAGS) -c -o _gi_la-pygi-source.lo `test -f 'pygi-source.c' || echo '$(srcdir)/'`pygi-source.c
 
 _gi_la-pygi-argument.lo: pygi-argument.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_gi_la_CPPFLAGS) $(CPPFLAGS) $(_gi_la_CFLAGS) $(CFLAGS) -MT _gi_la-pygi-argument.lo -MD -MP -MF $(DEPDIR)/_gi_la-pygi-argument.Tpo -c -o _gi_la-pygi-argument.lo `test -f 'pygi-argument.c' || echo '$(srcdir)/'`pygi-argument.c
@@ -660,13 +660,6 @@ _gi_la-pygi-ccallback.lo: pygi-ccallback.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='pygi-ccallback.c' object='_gi_la-pygi-ccallback.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_gi_la_CPPFLAGS) $(CPPFLAGS) $(_gi_la_CFLAGS) $(CFLAGS) -c -o _gi_la-pygi-ccallback.lo `test -f 'pygi-ccallback.c' || echo '$(srcdir)/'`pygi-ccallback.c
-
-_gi_la-pygi-callbacks.lo: pygi-callbacks.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_gi_la_CPPFLAGS) $(CPPFLAGS) $(_gi_la_CFLAGS) $(CFLAGS) -MT _gi_la-pygi-callbacks.lo -MD -MP -MF $(DEPDIR)/_gi_la-pygi-callbacks.Tpo -c -o _gi_la-pygi-callbacks.lo `test -f 'pygi-callbacks.c' || echo '$(srcdir)/'`pygi-callbacks.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/_gi_la-pygi-callbacks.Tpo $(DEPDIR)/_gi_la-pygi-callbacks.Plo
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='pygi-callbacks.c' object='_gi_la-pygi-callbacks.lo' libtool=yes @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_gi_la_CPPFLAGS) $(CPPFLAGS) $(_gi_la_CFLAGS) $(CFLAGS) -c -o _gi_la-pygi-callbacks.lo `test -f 'pygi-callbacks.c' || echo '$(srcdir)/'`pygi-callbacks.c
 
 _gi_la-pygi-property.lo: pygi-property.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(LIBTOOL) $(AM_V_lt) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(_gi_la_CPPFLAGS) $(CPPFLAGS) $(_gi_la_CFLAGS) $(CFLAGS) -MT _gi_la-pygi-property.lo -MD -MP -MF $(DEPDIR)/_gi_la-pygi-property.Tpo -c -o _gi_la-pygi-property.lo `test -f 'pygi-property.c' || echo '$(srcdir)/'`pygi-property.c
@@ -1104,7 +1097,7 @@ uninstall-am: uninstall-pygiLTLIBRARIES uninstall-pygiPYTHON
 # build directory, which the Python interpreter can load
 # directly without having to know how to parse .la files.
 .la.so:
-	$(LN_S) .libs/$@ $@ || true
+	$(LN_S) -f .libs/$@ $@
 
 # if we build in a separate tree, we need to symlink the *.py files from the
 # source tree; Python does not accept the extensions and modules in different

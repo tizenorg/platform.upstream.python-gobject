@@ -27,7 +27,6 @@ import types
 
 _have_py3 = (sys.version_info[0] >= 3)
 
-from . import _glib, _gobject
 try:
     maketrans = ''.maketrans
 except AttributeError:
@@ -60,21 +59,36 @@ from .types import \
     StructMeta, \
     Function
 
+from ._gobject._gobject import \
+    GInterface, \
+    GObject
+
+from ._gobject.constants import \
+    TYPE_NONE, \
+    TYPE_BOXED, \
+    TYPE_POINTER, \
+    TYPE_ENUM, \
+    TYPE_FLAGS
+
+
 repository = Repository.get_default()
+
+# Cache of IntrospectionModules that have been loaded.
+_introspection_modules = {}
 
 
 def get_parent_for_object(object_info):
     parent_object_info = object_info.get_parent()
 
     if not parent_object_info:
+        # Special case GObject.Object as being derived from the static GObject.
+        if object_info.get_namespace() == 'GObject' and object_info.get_name() == 'Object':
+            return GObject
+
         return object
 
     namespace = parent_object_info.get_namespace()
     name = parent_object_info.get_name()
-
-    # Workaround for GObject.Object and GObject.InitiallyUnowned.
-    if namespace == 'GObject' and name == 'Object' or name == 'InitiallyUnowned':
-        return _gobject.GObject
 
     module = __import__('gi.repository.%s' % namespace, fromlist=[name])
     return getattr(module, name)
@@ -92,7 +106,13 @@ def get_interfaces_for_object(object_info):
 
 
 class IntrospectionModule(object):
+    """An object which wraps an introspection typelib.
 
+    This wrapping creates a python module like representation of the typelib
+    using gi repository as a foundation. Accessing attributes of the module
+    will dynamically pull them in and create wrappers for the members.
+    These members are then cached on this introspection module.
+    """
     def __init__(self, namespace, version=None):
         repository.require(namespace, version)
         self._namespace = namespace
@@ -120,16 +140,16 @@ class IntrospectionModule(object):
 
             if wrapper is None:
                 if info.is_flags():
-                    if g_type.is_a(_gobject.TYPE_FLAGS):
+                    if g_type.is_a(TYPE_FLAGS):
                         wrapper = flags_add(g_type)
                     else:
-                        assert g_type == _gobject.TYPE_NONE
+                        assert g_type == TYPE_NONE
                         wrapper = flags_register_new_gtype_and_add(info)
                 else:
-                    if g_type.is_a(_gobject.TYPE_ENUM):
+                    if g_type.is_a(TYPE_ENUM):
                         wrapper = enum_add(g_type)
                     else:
-                        assert g_type == _gobject.TYPE_NONE
+                        assert g_type == TYPE_NONE
                         wrapper = enum_register_new_gtype_and_add(info)
 
                 wrapper.__info__ = info
@@ -145,18 +165,11 @@ class IntrospectionModule(object):
                     value_name = value_info.get_name_unescaped().translate(ascii_upper_trans)
                     setattr(wrapper, value_name, wrapper(value_info.get_value()))
 
-            if g_type != _gobject.TYPE_NONE:
+            if g_type != TYPE_NONE:
                 g_type.pytype = wrapper
 
         elif isinstance(info, RegisteredTypeInfo):
             g_type = info.get_g_type()
-
-            # Check if there is already a Python wrapper.
-            if g_type != _gobject.TYPE_NONE:
-                type_ = g_type.pytype
-                if type_ is not None:
-                    self.__dict__[name] = type_
-                    return type_
 
             # Create a wrapper.
             if isinstance(info, ObjectInfo):
@@ -169,13 +182,13 @@ class IntrospectionModule(object):
                 bases = (CCallback,)
                 metaclass = GObjectMeta
             elif isinstance(info, InterfaceInfo):
-                bases = (_gobject.GInterface,)
+                bases = (GInterface,)
                 metaclass = GObjectMeta
             elif isinstance(info, (StructInfo, UnionInfo)):
-                if g_type.is_a(_gobject.TYPE_BOXED):
+                if g_type.is_a(TYPE_BOXED):
                     bases = (Boxed,)
-                elif (g_type.is_a(_gobject.TYPE_POINTER) or
-                      g_type == _gobject.TYPE_NONE or
+                elif (g_type.is_a(TYPE_POINTER) or
+                      g_type == TYPE_NONE or
                       g_type.fundamental == g_type):
                     bases = (Struct,)
                 else:
@@ -183,6 +196,17 @@ class IntrospectionModule(object):
                 metaclass = StructMeta
             else:
                 raise NotImplementedError(info)
+
+            # Check if there is already a Python wrapper that is not a parent class
+            # of the wrapper being created. If it is a parent, it is ok to clobber
+            # g_type.pytype with a new child class wrapper of the existing parent.
+            # Note that the return here never occurs under normal circumstances due
+            # to caching on the __dict__ itself.
+            if g_type != TYPE_NONE:
+                type_ = g_type.pytype
+                if type_ is not None and type_ not in bases:
+                    self.__dict__[name] = type_
+                    return type_
 
             name = info.get_name()
             dict_ = {
@@ -193,7 +217,7 @@ class IntrospectionModule(object):
             wrapper = metaclass(name, bases, dict_)
 
             # Register the new Python wrapper.
-            if g_type != _gobject.TYPE_NONE:
+            if g_type != TYPE_NONE:
                 g_type.pytype = wrapper
 
         elif isinstance(info, FunctionInfo):
@@ -203,6 +227,9 @@ class IntrospectionModule(object):
         else:
             raise NotImplementedError(info)
 
+        # Cache the newly created wrapper which will then be
+        # available directly on this introspection module instead of being
+        # lazily constructed through the __getattr__ we are currently in.
         self.__dict__[name] = wrapper
         return wrapper
 
@@ -229,7 +256,29 @@ class IntrospectionModule(object):
         return list(result)
 
 
+def get_introspection_module(namespace):
+    """
+    :Returns:
+        An object directly wrapping the gi module without overrides.
+    """
+    if namespace in _introspection_modules:
+        return _introspection_modules[namespace]
+
+    version = gi.get_required_version(namespace)
+    module = IntrospectionModule(namespace, version)
+    _introspection_modules[namespace] = module
+    return module
+
+
 class DynamicModule(types.ModuleType):
+    """A module composed of an IntrospectionModule and an overrides module.
+
+    DynamicModule wraps up an IntrospectionModule and an overrides module
+    into a single accessible module. This is what is returned from statements
+    like "from gi.repository import Foo". Accessing attributes on a DynamicModule
+    will first look overrides (or the gi.overrides.registry cache) and then
+    in the introspection module if it was not found as an override.
+    """
     def __init__(self, namespace):
         self._namespace = namespace
         self._introspection_module = None
@@ -237,9 +286,7 @@ class DynamicModule(types.ModuleType):
         self.__path__ = None
 
     def _load(self):
-        version = gi.get_required_version(self._namespace)
-        self._introspection_module = IntrospectionModule(self._namespace,
-                                                         version)
+        self._introspection_module = get_introspection_module(self._namespace)
         try:
             overrides_modules = __import__('gi.overrides', fromlist=[self._namespace])
             self._overrides_module = getattr(overrides_modules, self._namespace, None)
@@ -288,62 +335,3 @@ class DynamicModule(types.ModuleType):
                                        self.__class__.__name__,
                                        self._namespace,
                                        path)
-
-
-class DynamicGObjectModule(DynamicModule):
-    """Wrapper for the internal GObject module
-
-    This class allows us to access both the static internal PyGObject module and the GI GObject module
-    through the same interface.  It is returned when by importing GObject from the gi repository:
-
-    from gi.repository import GObject
-
-    We use this because some PyGI interfaces generated from the GIR require GObject types not wrapped
-    by the static bindings.  This also allows access to module attributes in a way that is more
-    familiar to GI application developers.  Take signal flags as an example.  The G_SIGNAL_RUN_FIRST
-    flag would be accessed as GObject.SIGNAL_RUN_FIRST in the static bindings but in the dynamic bindings
-    can be accessed as GObject.SignalFlags.RUN_FIRST.  The latter follows a GI naming convention which
-    would be familiar to GI application developers in a number of languages.
-    """
-
-    def __init__(self):
-        DynamicModule.__init__(self, namespace='GObject')
-
-    def __getattr__(self, name):
-        from . import _gobject
-
-        # first see if this attr is in the internal _gobject module
-        attr = getattr(_gobject, name, None)
-
-        # if not in module assume request for an attr exported through GI
-        if attr is None:
-            attr = super(DynamicGObjectModule, self).__getattr__(name)
-
-        return attr
-
-
-class DynamicGLibModule(DynamicModule):
-    """Wrapper for the internal GLib module
-
-    This class allows us to access both the static internal PyGLib module and the GI GLib module
-    through the same interface.  It is returned when by importing GLib from the gi repository:
-
-    from gi.repository import GLib
-
-    We use this because some PyGI interfaces generated from the GIR require GLib types not wrapped
-    by the static bindings.  This also allows access to module attributes in a way that is more
-    familiar to GI application developers.
-    """
-
-    def __init__(self):
-        DynamicModule.__init__(self, namespace='GLib')
-
-    def __getattr__(self, name):
-        # first see if this attr is in the internal _gobject module
-        attr = getattr(_glib, name, None)
-
-        # if not in module assume request for an attr exported through GI
-        if attr is None:
-            attr = super(DynamicGLibModule, self).__getattr__(name)
-
-        return attr

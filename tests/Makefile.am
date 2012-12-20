@@ -1,19 +1,36 @@
 CLEANFILES =
-noinst_LTLIBRARIES = libregress.la libgimarshallingtests.la
+noinst_LTLIBRARIES = libgimarshallingtests.la
+test_typelibs = GIMarshallingTests-1.0.typelib
 
-nodist_libregress_la_SOURCES = $(GI_DATADIR)/tests/regress.c $(GI_DATADIR)/tests/regress.h
-libregress_la_CFLAGS = $(GIO_CFLAGS) $(CAIRO_CFLAGS)
-libregress_la_LDFLAGS = -module -avoid-version $(GIO_LIBS) $(CAIRO_LIBS)
 nodist_libgimarshallingtests_la_SOURCES = $(GI_DATADIR)/tests/gimarshallingtests.c $(GI_DATADIR)/tests/gimarshallingtests.h
 libgimarshallingtests_la_CFLAGS = $(GLIB_CFLAGS)
 libgimarshallingtests_la_LDFLAGS = -module -avoid-version $(GLIB_LIBS)
 
 # This is a hack to make sure a shared library is built
-libregress.la: $(libregress_la_OBJECTS) $(libregress_la_DEPENDENCIES)
-	$(LINK) -rpath $(pkgpyexecdir) $(libregress_la_LDFLAGS) $(libregress_la_OBJECTS) $(libregress_la_LIBADD) $(LIBS)
-
 libgimarshallingtests.la: $(libgimarshallingtests_la_OBJECTS) $(libgimarshallingtests_la_DEPENDENCIES)
-	$(LINK) -rpath $(pkgpyexecdir) $(libgimarshallingtests_la_LDFLAGS) $(libgimarshallingtests_la_OBJECTS) $(libgimarhallingtests_la_LIBADD) $(LIBS)
+	$(AM_V_GEN) $(LINK) -rpath $(pkgpyexecdir) $(libgimarshallingtests_la_LDFLAGS) $(libgimarshallingtests_la_OBJECTS) $(libgimarhallingtests_la_LIBADD) $(LIBS)
+
+GIMarshallingTests-1.0.gir: libgimarshallingtests.la Makefile
+	$(AM_V_GEN) g-ir-scanner --include=Gio-2.0 \
+	--namespace=GIMarshallingTests --nsversion=1.0 --symbol-prefix=gi_marshalling_tests \
+	--warn-all --warn-error \
+	--library=libgimarshallingtests.la \
+	--libtool="$(top_builddir)/libtool" \
+	--output $@ \
+	$(nodist_libgimarshallingtests_la_SOURCES)
+GIMarshallingTests-1.0.typelib: GIMarshallingTests-1.0.gir Makefile
+	$(AM_V_GEN) g-ir-compiler $< -o $@
+
+# regress.c needs cairo
+if ENABLE_CAIRO
+noinst_LTLIBRARIES += libregress.la
+test_typelibs += Regress-1.0.typelib
+nodist_libregress_la_SOURCES = $(GI_DATADIR)/tests/regress.c $(GI_DATADIR)/tests/regress.h
+libregress_la_CFLAGS = $(GIO_CFLAGS) $(CAIRO_CFLAGS)
+libregress_la_LDFLAGS = -module -avoid-version $(GIO_LIBS) $(CAIRO_LIBS)
+
+libregress.la: $(libregress_la_OBJECTS) $(libregress_la_DEPENDENCIES)
+	$(AM_V_GEN) $(LINK) -rpath $(pkgpyexecdir) $(libregress_la_LDFLAGS) $(libregress_la_OBJECTS) $(libregress_la_LIBADD) $(LIBS)
 
 # g-i doesn't ship these as shared libraries anymore; we build them here
 Regress-1.0.gir: libregress.la Makefile
@@ -27,16 +44,8 @@ Regress-1.0.gir: libregress.la Makefile
 Regress-1.0.typelib: Regress-1.0.gir Makefile
 	$(AM_V_GEN) g-ir-compiler $< -o $@
 
-GIMarshallingTests-1.0.gir: libgimarshallingtests.la Makefile
-	$(AM_V_GEN) g-ir-scanner --include=Gio-2.0 \
-	--namespace=GIMarshallingTests --nsversion=1.0 --symbol-prefix=gi_marshalling_tests \
-	--warn-all --warn-error \
-	--library=libgimarshallingtests.la \
-	--libtool="$(top_builddir)/libtool" \
-	--output $@ \
-	$(nodist_libgimarshallingtests_la_SOURCES)
-GIMarshallingTests-1.0.typelib: GIMarshallingTests-1.0.gir Makefile
-	$(AM_V_GEN) g-ir-compiler $< -o $@
+endif # ENABLE_CAIRO
+
 
 gschemas.compiled: org.gnome.test.gschema.xml
 	glib-compile-schemas --targetdir=. --schema-file=$<
@@ -56,7 +65,7 @@ testhelper_la_SOURCES = \
 
 # This is a hack to make sure a shared library is built
 testhelper.la: $(testhelper_la_OBJECTS) $(testhelper_la_DEPENDENCIES)
-	$(LINK) -rpath $(pkgpyexecdir) $(testhelper_la_LDFLAGS) $(testhelper_la_OBJECTS) $(testhelper_la_LIBADD) $(LIBS)
+	$(AM_V_GEN) $(LINK) -rpath $(pkgpyexecdir) $(testhelper_la_LDFLAGS) $(testhelper_la_OBJECTS) $(testhelper_la_LIBADD) $(LIBS)
 
 
 .la.so:
@@ -77,7 +86,10 @@ EXTRA_DIST = \
 	org.gnome.test.gschema.xml \
 	test_glib.py \
 	test_gobject.py \
+	test_gtype.py \
 	test_interface.py \
+	test_internal_api.py \
+	test_iochannel.py \
 	test_mainloop.py \
 	test_option.py \
 	test_properties.py \
@@ -85,7 +97,6 @@ EXTRA_DIST = \
 	test_source.py \
 	test_subprocess.py \
 	test_thread.py \
-	test_uris.py \
 	test_everything.py \
 	test_gi.py \
 	test_gdbus.py \
@@ -96,7 +107,7 @@ EXTRA_DIST = \
 	test_overrides_gdk.py \
 	test_overrides_gtk.py \
 	test_atoms.py \
-	test_pygtkcompat.py \
+	compat_test_pygtk.py \
 	gi/__init__.py \
 	gi/overrides/__init__.py \
 	gi/overrides/Regress.py \
@@ -112,14 +123,23 @@ RUN_TESTS_ENV_VARS= \
 	GI_TYPELIB_PATH=$(builddir):$$GI_TYPELIB_PATH \
 	XDG_DATA_DIRS=$$XDG_DATA_DIRS:/usr/share \
 	MALLOC_PERTURB_=85 \
+	MALLOC_CHECK_=3 \
 	TESTS_BUILDDIR=$(builddir)
 
-check-local: $(LTLIBRARIES:.la=.so) Regress-1.0.typelib GIMarshallingTests-1.0.typelib gschemas.compiled
+# pygtkcompat tests need to be run in a separate process as they
+# clobber global name space
+check-local: $(LTLIBRARIES:.la=.so) $(test_typelibs) gschemas.compiled
 	@echo "  CHECK  Pyflakes"
 	@if type pyflakes >/dev/null 2>&1; then pyflakes $(top_srcdir); else echo "skipped, pyflakes not installed"; fi
-	@echo "  CHECK  PEP8"
-	@if type pep8 >/dev/null 2>&1; then pep8 --ignore=E501,E123,E124 --repeat --show-source $(top_srcdir); else echo "skipped, pep8 not installed"; fi
-	$(RUN_TESTS_ENV_VARS) $(DBUS_LAUNCH) $(EXEC_NAME) $(PYTHON) -Wd -Werror::PendingDeprecationWarning -Werror::DeprecationWarning $(srcdir)/runtests.py
+	@if test -z "$$SKIP_PEP8"; then \
+		echo "  CHECK  PEP8"; \
+		if type pep8 >/dev/null 2>&1; then pep8 --ignore=E501,E123,E124 --repeat --show-source $(top_srcdir); else echo "skipped, pep8 not installed"; fi; \
+	fi
+	export `$(DBUS_LAUNCH)` && \
+	$(RUN_TESTS_ENV_VARS) $(EXEC_NAME) $(PYTHON) -Wd -Werror::PendingDeprecationWarning -Werror::DeprecationWarning -Werror::RuntimeWarning $(srcdir)/runtests.py; rc=$$?; \
+	[ "$$rc" -ne 0 ] || [ -n "$$TEST_NAMES" ] || { TEST_NAMES=compat_test_pygtk $(RUN_TESTS_ENV_VARS) $(EXEC_NAME) $(PYTHON) -Wd -Werror::PendingDeprecationWarning -Werror::DeprecationWarning -Werror::RuntimeWarning $(srcdir)/runtests.py; rc=$$?; }; \
+	kill $$DBUS_SESSION_BUS_PID; \
+	exit $$rc
 
 check.gdb:
 	EXEC_NAME="gdb --args" $(MAKE) check

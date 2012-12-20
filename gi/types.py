@@ -23,62 +23,118 @@
 from __future__ import absolute_import
 
 import sys
+
 from . import _gobject
+from ._gobject._gobject import GInterface
+from ._gobject.constants import TYPE_INVALID
 
 from ._gi import \
     InterfaceInfo, \
     ObjectInfo, \
     StructInfo, \
     VFuncInfo, \
+    FunctionInfo, \
     register_interface_info, \
-    hook_up_vfunc_implementation
+    hook_up_vfunc_implementation, \
+    DIRECTION_IN, \
+    DIRECTION_OUT, \
+    DIRECTION_INOUT
 
 
 StructInfo  # pyflakes
 
-if sys.version_info > (3, 0):
+if (3, 0) <= sys.version_info < (3, 3):
+    # callable not available for python 3.0 thru 3.2
     def callable(obj):
         return hasattr(obj, '__call__')
 
 
-def Function(info):
+def split_function_info_args(info):
+    """Split a functions args into a tuple of two lists.
 
+    Note that args marked as DIRECTION_INOUT will be in both lists.
+
+    :Returns:
+        Tuple of (in_args, out_args)
+    """
+    in_args = []
+    out_args = []
+    for arg in info.get_arguments():
+        direction = arg.get_direction()
+        if direction in (DIRECTION_IN, DIRECTION_INOUT):
+            in_args.append(arg)
+        if direction in (DIRECTION_OUT, DIRECTION_INOUT):
+            out_args.append(arg)
+    return (in_args, out_args)
+
+
+def get_callable_info_doc_string(info):
+    """Build a signature string which can be used for documentation."""
+    in_args, out_args = split_function_info_args(info)
+    in_args_strs = []
+    if isinstance(info, VFuncInfo):
+        in_args_strs = ['self']
+    elif isinstance(info, FunctionInfo):
+        if info.is_method():
+            in_args_strs = ['self']
+        elif info.is_constructor():
+            in_args_strs = ['cls']
+
+    for arg in in_args:
+        argstr = arg.get_name() + ':' + arg.get_pytype_hint()
+        if arg.is_optional():
+            argstr += '=<optional>'
+        in_args_strs.append(argstr)
+    in_args_str = ', '.join(in_args_strs)
+
+    if out_args:
+        out_args_str = ', '.join(arg.get_name() + ':' + arg.get_pytype_hint()
+                                 for arg in out_args)
+        return '%s(%s) -> %s' % (info.get_name(), in_args_str, out_args_str)
+    else:
+        return '%s(%s)' % (info.get_name(), in_args_str)
+
+
+def wraps_callable_info(info):
+    """Similar to functools.wraps but with specific GICallableInfo support."""
+    def update_func(func):
+        func.__info__ = info
+        func.__name__ = info.get_name()
+        func.__module__ = info.get_namespace()
+        func.__doc__ = get_callable_info_doc_string(info)
+        return func
+    return update_func
+
+
+def Function(info):
+    """Warps GIFunctionInfo"""
+    @wraps_callable_info(info)
     def function(*args, **kwargs):
         return info.invoke(*args, **kwargs)
-    function.__info__ = info
-    function.__name__ = info.get_name()
-    function.__module__ = info.get_namespace()
 
     return function
 
 
 class NativeVFunc(object):
-
+    """Wraps GINativeVFuncInfo"""
     def __init__(self, info):
-        self._info = info
+        self.__info__ = info
 
     def __get__(self, instance, klass):
+        @wraps_callable_info(self.__info__)
         def native_vfunc(*args, **kwargs):
-            return self._info.invoke(klass.__gtype__, *args, **kwargs)
-        native_vfunc.__info__ = self._info
-        native_vfunc.__name__ = self._info.get_name()
-        native_vfunc.__module__ = self._info.get_namespace()
-
+            return self.__info__.invoke(klass.__gtype__, *args, **kwargs)
         return native_vfunc
 
 
 def Constructor(info):
-
+    """Warps GIFunctionInfo with get_constructor() == True"""
+    @wraps_callable_info(info)
     def constructor(cls, *args, **kwargs):
         cls_name = info.get_container().get_name()
         if cls.__name__ != cls_name:
             raise TypeError('%s constructor cannot be used to create instances of a subclass' % cls_name)
         return info.invoke(cls, *args, **kwargs)
-
-    constructor.__info__ = info
-    constructor.__name__ = info.get_name()
-    constructor.__module__ = info.get_namespace()
-
     return constructor
 
 
@@ -169,6 +225,11 @@ class MetaClassHelper(object):
         if class_info is None or not isinstance(class_info, ObjectInfo):
             return
 
+        # Special case skipping of vfuncs for GObject.Object because they will break
+        # the static bindings which will try to use them.
+        if cls.__module__ == 'gi.repository.GObject' and cls.__name__ == 'Object':
+            return
+
         for vfunc_info in class_info.get_vfuncs():
             name = 'do_%s' % vfunc_info.get_name()
             value = NativeVFunc(vfunc_info)
@@ -181,8 +242,10 @@ def find_vfunc_info_in_interface(bases, vfunc_name):
         # This can be seen in IntrospectionModule.__getattr__() in module.py.
         # We do not need to search regular classes here, only wrapped interfaces.
         # We also skip GInterface, because it is not wrapped and has no __info__ attr.
-        if base is _gobject.GInterface or\
-                not issubclass(base, _gobject.GInterface) or\
+        # Skip bases without __info__ (static _gobject._gobject.GObject)
+        if base is GInterface or\
+                not issubclass(base, GInterface) or\
+                not hasattr(base, '__info__') or\
                 not isinstance(base.__info__, InterfaceInfo):
             continue
 
@@ -260,7 +323,7 @@ def mro(C):
         for subclass_bases in bases_of_subclasses:
             candidate = subclass_bases[0]
             not_head = [s for s in bases_of_subclasses if candidate in s[1:]]
-            if not_head and _gobject.GInterface not in candidate.__bases__:
+            if not_head and GInterface not in candidate.__bases__:
                 candidate = None  # conflict, reject candidate
             else:
                 break
@@ -287,7 +350,7 @@ class StructMeta(type, MetaClassHelper):
 
         # Avoid touching anything else than the base class.
         g_type = cls.__info__.get_g_type()
-        if g_type != _gobject.TYPE_INVALID and g_type.pytype is not None:
+        if g_type != TYPE_INVALID and g_type.pytype is not None:
             return
 
         cls._setup_fields()

@@ -1,6 +1,6 @@
 /* -*- mode: C; c-basic-offset: 4; indent-tabs-mode: nil; -*- */
 /*
- * Copyright (c) 2010  Collabora Ltd. <http://www.collabora.co.uk/>
+ * Copyright (c) 2012 Canonical Ltd.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to
@@ -21,21 +21,11 @@
  * IN THE SOFTWARE.
  */
 
-#ifndef __PYGI_FOREIGN_G_VARIANT_H__
-#define __PYGI_FOREIGN_G_VARIANT_H__
+#ifndef __PYGI_SOURCE_H__
+#define __PYGI_SOURCE_H__
 
-#include "pygi-foreign.h"
+PyObject *pyg_source_new ();
+PyObject *pyg_source_set_callback (PyGObject *self, PyObject *args);
 
-PyObject *g_variant_to_arg(PyObject        *value,
-                           GIInterfaceInfo *interface_info,
-                           GITransfer       transfer,
-                           GIArgument      *arg);
-
-PyObject *g_variant_from_arg(GITypeInfo *type_info,
-                             gpointer    data);
-
-PyObject *g_variant_release_foreign (GIBaseInfo *base_info,
-                                     gpointer    struct_);
-
-#endif /* __PYGI_FOREIGN_G_VARIANT_H__ */
+#endif /* __PYGI_SOURCE_H__ */
 

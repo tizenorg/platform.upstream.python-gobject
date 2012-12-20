@@ -727,26 +727,6 @@ pyg_value_array_from_pyobject(GValue *value,
     return 0;
 }
 
-static
-PyObject *
-pyg_get_gvariant_type()
-{
-    static PyObject *variant_type = NULL;
-    PyObject *py_module;
-
-    if (variant_type == NULL) {
-	py_module = PyImport_ImportModule ("gi.repository.GLib");
-	if (py_module == NULL)
-	    return NULL;
-
-	variant_type = PyObject_GetAttrString (py_module, "Variant");
-
-	Py_DECREF (py_module);
-    }
-
-    return variant_type;
-}
-
 /**
  * pyg_value_from_pyobject:
  * @value: the GValue object to store the converted value in.
@@ -831,11 +811,15 @@ pyg_value_from_pyobject(GValue *value, PyObject *obj)
     case G_TYPE_UINT:
 	{
 	    if (PYGLIB_PyLong_Check(obj)) {
-		glong val;
+		guint val;
 
-		val = PYGLIB_PyLong_AsLong(obj);
-		if (val >= 0 && val <= G_MAXUINT)
-		    g_value_set_uint(value, (guint)val);
+                /* check that number is not negative */
+                if (PyLong_AsLongLong(obj) < 0)
+                    return -1;
+
+		val = PyLong_AsUnsignedLong(obj);
+		if (val <= G_MAXUINT)
+		    g_value_set_uint(value, val);
 		else
 		    return -1;
 	    } else {
@@ -1013,10 +997,9 @@ pyg_value_from_pyobject(GValue *value, PyObject *obj)
 	break;
     case G_TYPE_VARIANT:
         {
-            PyObject* variant_type = pyg_get_gvariant_type();
             if (obj == Py_None)
                 g_value_set_variant(value, NULL);
-            else if (variant_type != NULL && PyObject_IsInstance(obj, variant_type))
+            else if (pyg_type_from_object_strict(obj, FALSE) == G_TYPE_VARIANT)
                 g_value_set_variant(value, pyg_boxed_get(obj, GVariant));
             else
                 return -1;

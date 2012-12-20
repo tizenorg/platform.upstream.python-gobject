@@ -357,12 +357,90 @@ static PyMethodDef _PyGIPropertyInfo_methods[] = {
     { NULL, NULL, 0 }
 };
 
+
 /* ArgInfo */
 PYGLIB_DEFINE_TYPE ("gi.ArgInfo", PyGIArgInfo_Type, PyGIBaseInfo);
 
+static PyObject *
+_wrap_g_arg_info_get_direction (PyGIBaseInfo *self)
+{
+    return PyLong_FromLong (
+	    g_arg_info_get_direction ((GIArgInfo*)self->info) );
+}
+
+static PyObject *
+_wrap_g_arg_info_is_caller_allocates (PyGIBaseInfo *self)
+{
+    return PyBool_FromLong (
+	    g_arg_info_is_caller_allocates ((GIArgInfo*)self->info) );
+}
+
+static PyObject *
+_wrap_g_arg_info_is_return_value (PyGIBaseInfo *self)
+{
+    return PyBool_FromLong (
+	    g_arg_info_is_return_value ((GIArgInfo*)self->info) );
+}
+
+static PyObject *
+_wrap_g_arg_info_is_optional (PyGIBaseInfo *self)
+{
+    return PyBool_FromLong (
+	    g_arg_info_is_optional ((GIArgInfo*)self->info) );
+}
+
+static PyObject *
+_wrap_g_arg_info_may_be_null (PyGIBaseInfo *self)
+{
+    return PyBool_FromLong (
+	    g_arg_info_may_be_null ((GIArgInfo*)self->info) );
+}
+
+/* _g_arg_get_pytype_hint
+ *
+ * Returns new value reference to a string hinting at the python type
+ * which can be used for the given gi argument info.
+ */
+static PyObject *
+_g_arg_get_pytype_hint (PyGIBaseInfo *self)
+{
+    GIArgInfo *arg_info = (GIArgInfo*)self->info;
+    GITypeInfo type_info;
+    g_arg_info_load_type(arg_info, &type_info);
+    GITypeTag type_tag = g_type_info_get_tag(&type_info);
+
+    /* First attempt getting a python type object. */
+    PyObject *py_type = _pygi_get_py_type_hint(type_tag);
+    if (py_type != Py_None && PyObject_HasAttrString(py_type, "__name__")) {
+	PyObject *name = PyObject_GetAttrString(py_type, "__name__");
+	Py_DecRef(py_type);
+	return name;
+    } else {
+	Py_DecRef(py_type);
+	if (type_tag == GI_TYPE_TAG_INTERFACE) {
+	    GIBaseInfo *iface = g_type_info_get_interface(&type_info);
+	    gchar *name = g_strdup_printf("%s.%s",
+		    g_base_info_get_namespace(iface),
+		    g_base_info_get_name (iface));
+	    g_base_info_unref(iface);
+	    PyObject *py_string = PYGLIB_PyUnicode_FromString(name);
+	    g_free(name);
+	    return py_string;
+	}
+	return PYGLIB_PyUnicode_FromString(g_type_tag_to_string(type_tag));
+    }
+}
+
 static PyMethodDef _PyGIArgInfo_methods[] = {
+    { "get_direction", (PyCFunction) _wrap_g_arg_info_get_direction, METH_NOARGS },
+    { "is_caller_allocates", (PyCFunction) _wrap_g_arg_info_is_caller_allocates, METH_NOARGS },
+    { "is_return_value", (PyCFunction) _wrap_g_arg_info_is_return_value, METH_NOARGS },
+    { "is_optional", (PyCFunction) _wrap_g_arg_info_is_optional, METH_NOARGS },
+    { "may_be_null", (PyCFunction) _wrap_g_arg_info_may_be_null, METH_NOARGS },
+    { "get_pytype_hint", (PyCFunction) _g_arg_get_pytype_hint, METH_NOARGS },
     { NULL, NULL, 0 }
 };
+
 
 /* TypeInfo */
 PYGLIB_DEFINE_TYPE ("gi.TypeInfo", PyGITypeInfo_Type, PyGIBaseInfo);
@@ -1433,34 +1511,14 @@ _wrap_g_field_info_set_value (PyGIBaseInfo *self,
         g_base_info_unref (info);
     } else if (g_type_info_is_pointer (field_type_info)
             && g_type_info_get_tag (field_type_info) == GI_TYPE_TAG_VOID) {
-        int offset;
 
-        if (py_value != Py_None && !PYGLIB_PyLong_Check(py_value)) {
-            if (PyErr_WarnEx(PyExc_RuntimeWarning,
-                         "Usage of gpointers to store objects has been deprecated. "
-                         "Please integer values instead, see: https://bugzilla.gnome.org/show_bug.cgi?id=683599",
-                         1))
-                goto out;
+        value = _pygi_argument_from_object (py_value, field_type_info, GI_TRANSFER_NOTHING);
+        if (PyErr_Occurred()) {
+            goto out;
         }
 
-        offset = g_field_info_get_offset ((GIFieldInfo *) self->info);
-        value = _pygi_argument_from_object (py_value, field_type_info, GI_TRANSFER_NOTHING);
-
-        /* Decrement the previous python object stashed on the void pointer.
-         * This seems somewhat dangerous as the code is blindly assuming any
-         * void pointer field stores a python object pointer and then decrefs it.
-         * This is essentially the same as something like:
-         *  Py_XDECREF(struct->void_ptr); */
-        Py_XDECREF(G_STRUCT_MEMBER (gpointer, pointer, offset));
-
-        /* Assign and increment the newly assigned object. At this point the value
-         * arg will hold a pointer the python object "py_value" or NULL.
-         * This is essentially:
-         *  struct->void_ptr = value.v_pointer;
-         *  Py_XINCREF(struct->void_ptr);
-         */
+        int offset = g_field_info_get_offset ((GIFieldInfo *) self->info);
         G_STRUCT_MEMBER (gpointer, pointer, offset) = (gpointer)value.v_pointer;
-        Py_XINCREF(G_STRUCT_MEMBER (gpointer, pointer, offset));
 
         retval = Py_None;
         goto out;
@@ -1664,27 +1722,34 @@ _pygi_info_register_types (PyObject *m)
     if (PyModule_AddObject(m, "BaseInfo", (PyObject *)&PyGIBaseInfo_Type))
         return;
 
+    if (PyModule_AddObject(m, "DIRECTION_IN", PyLong_FromLong(GI_DIRECTION_IN)))
+        return;
+    if (PyModule_AddObject(m, "DIRECTION_OUT", PyLong_FromLong(GI_DIRECTION_OUT)))
+        return;
+    if (PyModule_AddObject(m, "DIRECTION_INOUT", PyLong_FromLong(GI_DIRECTION_INOUT)))
+        return;
+
     _PyGI_REGISTER_TYPE (m, PyGIUnresolvedInfo_Type, UnresolvedInfo,
                          PyGIBaseInfo_Type);
-    _PyGI_REGISTER_TYPE (m, PyGICallableInfo_Type, CallableInfo, 
+    _PyGI_REGISTER_TYPE (m, PyGICallableInfo_Type, CallableInfo,
                          PyGIBaseInfo_Type);
     _PyGI_REGISTER_TYPE (m, PyGICallbackInfo_Type, CallbackInfo,
                          PyGIBaseInfo_Type);
-    _PyGI_REGISTER_TYPE (m, PyGIFunctionInfo_Type, FunctionInfo, 
+    _PyGI_REGISTER_TYPE (m, PyGIFunctionInfo_Type, FunctionInfo,
                          PyGICallableInfo_Type);
-    _PyGI_REGISTER_TYPE (m, PyGIRegisteredTypeInfo_Type, RegisteredTypeInfo, 
+    _PyGI_REGISTER_TYPE (m, PyGIRegisteredTypeInfo_Type, RegisteredTypeInfo,
                          PyGIBaseInfo_Type);
-    _PyGI_REGISTER_TYPE (m, PyGIStructInfo_Type, StructInfo, 
+    _PyGI_REGISTER_TYPE (m, PyGIStructInfo_Type, StructInfo,
                          PyGIRegisteredTypeInfo_Type);
-    _PyGI_REGISTER_TYPE (m, PyGIEnumInfo_Type, EnumInfo, 
+    _PyGI_REGISTER_TYPE (m, PyGIEnumInfo_Type, EnumInfo,
                          PyGIRegisteredTypeInfo_Type);
-    _PyGI_REGISTER_TYPE (m, PyGIObjectInfo_Type, ObjectInfo, 
+    _PyGI_REGISTER_TYPE (m, PyGIObjectInfo_Type, ObjectInfo,
                          PyGIRegisteredTypeInfo_Type);
-    _PyGI_REGISTER_TYPE (m, PyGIInterfaceInfo_Type, InterfaceInfo, 
+    _PyGI_REGISTER_TYPE (m, PyGIInterfaceInfo_Type, InterfaceInfo,
                          PyGIRegisteredTypeInfo_Type);
-    _PyGI_REGISTER_TYPE (m, PyGIConstantInfo_Type, ConstantInfo, 
+    _PyGI_REGISTER_TYPE (m, PyGIConstantInfo_Type, ConstantInfo,
                          PyGIBaseInfo_Type);
-    _PyGI_REGISTER_TYPE (m, PyGIValueInfo_Type, ValueInfo, 
+    _PyGI_REGISTER_TYPE (m, PyGIValueInfo_Type, ValueInfo,
                          PyGIBaseInfo_Type);
     _PyGI_REGISTER_TYPE (m, PyGIFieldInfo_Type, FieldInfo,
                          PyGIBaseInfo_Type);

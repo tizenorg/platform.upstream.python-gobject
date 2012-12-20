@@ -678,6 +678,7 @@ _arg_cache_from_py_interface_callback_setup (PyGIArgCache *arg_cache,
         callable_cache->args_cache[callback_cache->destroy_notify_index] = destroy_arg_cache;
     }
     arg_cache->from_py_marshaller = _pygi_marshal_from_py_interface_callback;
+    arg_cache->from_py_cleanup = _pygi_marshal_cleanup_from_py_interface_callback;
 }
 
 static void
@@ -1369,7 +1370,7 @@ _args_cache_generate (GICallableInfo *callable_info,
         type_info = g_arg_info_get_type (arg_info);
         type_tag = g_type_info_get_tag (type_info);
 
-        if (type_tag == GI_TYPE_TAG_INTERFACE)
+        if (type_tag == GI_TYPE_TAG_INTERFACE || type_tag == GI_TYPE_TAG_ARRAY)
             is_caller_allocates = g_arg_info_is_caller_allocates (arg_info);
 
         /* must be an child arg filled in by its owner

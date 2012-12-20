@@ -9,9 +9,7 @@ from compathelper import _long
 
 
 class TestGVariant(unittest.TestCase):
-    def test_create(self):
-        # simple values
-
+    def test_create_simple(self):
         variant = GLib.Variant('i', 42)
         self.assertTrue(isinstance(variant, GLib.Variant))
         self.assertEqual(variant.get_int32(), 42)
@@ -24,7 +22,7 @@ class TestGVariant(unittest.TestCase):
         self.assertTrue(isinstance(variant, GLib.Variant))
         self.assertEqual(variant.get_string(), 'hello')
 
-        # boxed variant
+    def test_create_variant(self):
         variant = GLib.Variant('v', GLib.Variant('i', 42))
         self.assertTrue(isinstance(variant, GLib.Variant))
         self.assertTrue(isinstance(variant.get_variant(), GLib.Variant))
@@ -38,8 +36,7 @@ class TestGVariant(unittest.TestCase):
         self.assertEqual(variant.get_variant().get_variant().get_type_string(), 'i')
         self.assertEqual(variant.get_variant().get_variant().get_int32(), 42)
 
-        # tuples
-
+    def test_create_tuple(self):
         variant = GLib.Variant('()', ())
         self.assertEqual(variant.get_type_string(), '()')
         self.assertEqual(variant.n_children(), 0)
@@ -64,8 +61,7 @@ class TestGVariant(unittest.TestCase):
         self.assertEqual(variant.get_type_string(), '((si)(ub))')
         self.assertEqual(variant.unpack(), (('hello', -1), (_long(42), True)))
 
-        # dictionaries
-
+    def test_create_dictionary(self):
         variant = GLib.Variant('a{si}', {})
         self.assertTrue(isinstance(variant, GLib.Variant))
         self.assertEqual(variant.get_type_string(), 'a{si}')
@@ -92,8 +88,7 @@ class TestGVariant(unittest.TestCase):
         self.assertTrue(isinstance(variant, GLib.Variant))
         self.assertEqual(variant.unpack(), d)
 
-        # arrays
-
+    def test_create_array(self):
         variant = GLib.Variant('ai', [])
         self.assertEqual(variant.get_type_string(), 'ai')
         self.assertEqual(variant.n_children(), 0)
@@ -138,10 +133,7 @@ class TestGVariant(unittest.TestCase):
         self.assertEqual(variant.get_type_string(), 'aai')
         self.assertEqual(variant.unpack(), [[1, 2], [3, 4, 5]])
 
-        #
-        # complex types
-        #
-
+    def test_create_complex(self):
         variant = GLib.Variant('(as)', ([],))
         self.assertEqual(variant.get_type_string(), '(as)')
         self.assertEqual(variant.n_children(), 1)
@@ -158,6 +150,30 @@ class TestGVariant(unittest.TestCase):
         self.assertEqual(variant.n_children(), 1)
         self.assertEqual(variant.get_child_value(0).n_children(), 1)
         self.assertEqual(variant.get_child_value(0).get_child_value(0).get_string(), 'hello')
+
+        variant = GLib.Variant('a(ii)', [])
+        self.assertEqual(variant.get_type_string(), 'a(ii)')
+        self.assertEqual(variant.n_children(), 0)
+
+        variant = GLib.Variant('a(ii)', [(5, 6)])
+        self.assertEqual(variant.get_type_string(), 'a(ii)')
+        self.assertEqual(variant.n_children(), 1)
+        self.assertEqual(variant.get_child_value(0).n_children(), 2)
+        self.assertEqual(variant.get_child_value(0).get_child_value(0).get_int32(), 5)
+        self.assertEqual(variant.get_child_value(0).get_child_value(1).get_int32(), 6)
+
+        variant = GLib.Variant('(a(ii))', ([],))
+        self.assertEqual(variant.get_type_string(), '(a(ii))')
+        self.assertEqual(variant.n_children(), 1)
+        self.assertEqual(variant.get_child_value(0).n_children(), 0)
+
+        variant = GLib.Variant('(a(ii))', ([(5, 6)],))
+        self.assertEqual(variant.get_type_string(), '(a(ii))')
+        self.assertEqual(variant.n_children(), 1)
+        self.assertEqual(variant.get_child_value(0).n_children(), 1)
+        self.assertEqual(variant.get_child_value(0).get_child_value(0).n_children(), 2)
+        self.assertEqual(variant.get_child_value(0).get_child_value(0).get_child_value(0).get_int32(), 5)
+        self.assertEqual(variant.get_child_value(0).get_child_value(0).get_child_value(1).get_int32(), 6)
 
         obj = {'a1': (1, True), 'a2': (2, False)}
         variant = GLib.Variant('a{s(ib)}', obj)
@@ -211,6 +227,13 @@ class TestGVariant(unittest.TestCase):
 
         # unimplemented data type
         self.assertRaises(NotImplementedError, GLib.Variant, 'Q', 1)
+
+        # invalid types
+        self.assertRaises(TypeError, GLib.Variant, '(ii', (42, 3))
+        self.assertRaises(TypeError, GLib.Variant, '(ii))', (42, 3))
+        self.assertRaises(TypeError, GLib.Variant, 'a{si', {})
+        self.assertRaises(TypeError, GLib.Variant, 'a{si}}', {})
+        self.assertRaises(TypeError, GLib.Variant, 'a{iii}', {})
 
     def test_unpack(self):
         # simple values

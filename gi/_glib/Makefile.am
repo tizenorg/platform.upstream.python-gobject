@@ -52,16 +52,10 @@ pyglib_LTLIBRARIES = _glib.la
 
 _glib_la_SOURCES = \
 	glibmodule.c \
-	pygiochannel.c \
-	pygiochannel.h \
 	pygoptioncontext.c \
 	pygoptioncontext.h \
 	pygoptiongroup.c \
 	pygoptiongroup.h \
-	pygmaincontext.c \
-	pygmaincontext.h \
-	pygmainloop.c \
-	pygmainloop.h \
 	pygsource.c \
 	pygsource.h \
 	pygspawn.c \
@@ -96,4 +90,4 @@ check-local: $(pyglib_LTLIBRARIES:.la=.so) build_pylinks
 clean-local:
 	rm -f $(pyglib_LTLIBRARIES:.la=.so)
 .la.so:
-	$(LN_S) .libs/$@ $@ || true
+	$(LN_S) -f .libs/$@ $@

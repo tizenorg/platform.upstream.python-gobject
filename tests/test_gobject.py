@@ -1,37 +1,93 @@
 # -*- Mode: Python -*-
 
+import sys
 import gc
 import unittest
+import warnings
 
 from gi.repository import GObject
-import sys
+from gi import PyGIDeprecationWarning
+from gi.module import get_introspection_module
+from gi._gobject import _gobject
+
 import testhelper
 
 
 class TestGObjectAPI(unittest.TestCase):
-    def testGObjectModule(self):
-        obj = GObject.GObject()
+    def test_gobject_inheritance(self):
+        # GObject.Object is a class hierarchy as follows:
+        # overrides.Object -> introspection.Object -> static.GObject
+        GIObjectModule = get_introspection_module('GObject')
+        self.assertTrue(issubclass(GObject.Object, GIObjectModule.Object))
+        self.assertTrue(issubclass(GIObjectModule.Object, _gobject.GObject))
 
-        self.assertEqual(obj.__module__,
-                         'gi._gobject._gobject')
+        self.assertEqual(_gobject.GObject.__gtype__, GObject.TYPE_OBJECT)
+        self.assertEqual(GIObjectModule.Object.__gtype__, GObject.TYPE_OBJECT)
+        self.assertEqual(GObject.Object.__gtype__, GObject.TYPE_OBJECT)
+
+        # The pytype wrapper should hold the outer most Object class from overrides.
+        self.assertEqual(GObject.TYPE_OBJECT.pytype, GObject.Object)
+
+    @unittest.skipIf(sys.version_info[:2] < (2, 7), 'Python 2.7 is required')
+    def test_gobject_unsupported_overrides(self):
+        obj = GObject.Object()
+
+        with self.assertRaisesRegex(RuntimeError, 'Data access methods are unsupported.*'):
+            obj.get_data()
+
+        with self.assertRaisesRegex(RuntimeError, 'This method is currently unsupported.*'):
+            obj.force_floating()
+
+    def test_compat_api(self):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            # GObject formerly exposed a lot of GLib's functions
+            self.assertEqual(GObject.markup_escape_text('foo'), 'foo')
+
+            ml = GObject.MainLoop()
+            self.assertFalse(ml.is_running())
+
+            context = GObject.main_context_default()
+            self.assertTrue(context.pending() in [False, True])
+
+            context = GObject.MainContext()
+            self.assertFalse(context.pending())
+
+            self.assertTrue(issubclass(w[0].category, PyGIDeprecationWarning))
+            self.assertTrue('GLib.markup_escape_text' in str(w[0]), str(w[0]))
+
+            self.assertLess(GObject.PRIORITY_HIGH, GObject.PRIORITY_DEFAULT)
+
+    def test_min_max_int(self):
+        self.assertEqual(GObject.G_MAXINT16, 2 ** 15 - 1)
+        self.assertEqual(GObject.G_MININT16, -2 ** 15)
+        self.assertEqual(GObject.G_MAXUINT16, 2 ** 16 - 1)
+
+        self.assertEqual(GObject.G_MAXINT32, 2 ** 31 - 1)
+        self.assertEqual(GObject.G_MININT32, -2 ** 31)
+        self.assertEqual(GObject.G_MAXUINT32, 2 ** 32 - 1)
+
+        self.assertEqual(GObject.G_MAXINT64, 2 ** 63 - 1)
+        self.assertEqual(GObject.G_MININT64, -2 ** 63)
+        self.assertEqual(GObject.G_MAXUINT64, 2 ** 64 - 1)
 
 
 class TestReferenceCounting(unittest.TestCase):
-    def testRegularObject(self):
+    def test_regular_object(self):
         obj = GObject.GObject()
         self.assertEqual(obj.__grefcount__, 1)
 
         obj = GObject.new(GObject.GObject)
         self.assertEqual(obj.__grefcount__, 1)
 
-    def testFloating(self):
+    def test_floating(self):
         obj = testhelper.Floating()
         self.assertEqual(obj.__grefcount__, 1)
 
         obj = GObject.new(testhelper.Floating)
         self.assertEqual(obj.__grefcount__, 1)
 
-    def testOwnedByLibrary(self):
+    def test_owned_by_library(self):
         # Upon creation, the refcount of the object should be 2:
         # - someone already has a reference on the new object.
         # - the python wrapper should hold its own reference.
@@ -44,7 +100,7 @@ class TestReferenceCounting(unittest.TestCase):
         obj.release()
         self.assertEqual(obj.__grefcount__, 1)
 
-    def testOwnedByLibraryOutOfScope(self):
+    def test_owned_by_library_out_of_scope(self):
         obj = testhelper.OwnedByLibrary()
         self.assertEqual(obj.__grefcount__, 2)
 
@@ -62,7 +118,7 @@ class TestReferenceCounting(unittest.TestCase):
         obj.release()
         self.assertEqual(obj.__grefcount__, 1)
 
-    def testOwnedByLibraryUsingGObjectNew(self):
+    def test_owned_by_library_using_gobject_new(self):
         # Upon creation, the refcount of the object should be 2:
         # - someone already has a reference on the new object.
         # - the python wrapper should hold its own reference.
@@ -75,7 +131,7 @@ class TestReferenceCounting(unittest.TestCase):
         obj.release()
         self.assertEqual(obj.__grefcount__, 1)
 
-    def testOwnedByLibraryOutOfScopeUsingGobjectNew(self):
+    def test_owned_by_library_out_of_scope_using_gobject_new(self):
         obj = GObject.new(testhelper.OwnedByLibrary)
         self.assertEqual(obj.__grefcount__, 2)
 
@@ -93,7 +149,7 @@ class TestReferenceCounting(unittest.TestCase):
         obj.release()
         self.assertEqual(obj.__grefcount__, 1)
 
-    def testFloatingAndSunk(self):
+    def test_floating_and_sunk(self):
         # Upon creation, the refcount of the object should be 2:
         # - someone already has a reference on the new object.
         # - the python wrapper should hold its own reference.
@@ -106,7 +162,7 @@ class TestReferenceCounting(unittest.TestCase):
         obj.release()
         self.assertEqual(obj.__grefcount__, 1)
 
-    def testFloatingAndSunkOutOfScope(self):
+    def test_floating_and_sunk_out_of_scope(self):
         obj = testhelper.FloatingAndSunk()
         self.assertEqual(obj.__grefcount__, 2)
 
@@ -124,7 +180,7 @@ class TestReferenceCounting(unittest.TestCase):
         obj.release()
         self.assertEqual(obj.__grefcount__, 1)
 
-    def testFloatingAndSunkUsingGObjectNew(self):
+    def test_floating_and_sunk_using_gobject_new(self):
         # Upon creation, the refcount of the object should be 2:
         # - someone already has a reference on the new object.
         # - the python wrapper should hold its own reference.
@@ -137,7 +193,7 @@ class TestReferenceCounting(unittest.TestCase):
         obj.release()
         self.assertEqual(obj.__grefcount__, 1)
 
-    def testFloatingAndSunkOutOfScopeUsingGObjectNew(self):
+    def test_floating_and_sunk_out_of_scope_using_gobject_new(self):
         obj = GObject.new(testhelper.FloatingAndSunk)
         self.assertEqual(obj.__grefcount__, 2)
 
@@ -155,7 +211,7 @@ class TestReferenceCounting(unittest.TestCase):
         obj.release()
         self.assertEqual(obj.__grefcount__, 1)
 
-    def testUninitializedObject(self):
+    def test_uninitialized_object(self):
         class Obj(GObject.GObject):
             def __init__(self):
                 x = self.__grefcount__
@@ -176,19 +232,19 @@ class TestPythonReferenceCounting(unittest.TestCase):
     # Newly created instances should alwayshave two references: one for
     # the GC, and one for the bound variable in the local scope.
 
-    def testNewInstanceHasTwoRefs(self):
+    def test_new_instance_has_two_refs(self):
         obj = GObject.GObject()
         self.assertEqual(sys.getrefcount(obj), 2)
 
-    def testNewInstanceHasTwoRefsUsingGObjectNew(self):
+    def test_new_instance_has_two_refs_using_gobject_new(self):
         obj = GObject.new(GObject.GObject)
         self.assertEqual(sys.getrefcount(obj), 2)
 
-    def testNewSubclassInstanceHasTwoRefs(self):
+    def test_new_subclass_instance_has_two_refs(self):
         obj = A()
         self.assertEqual(sys.getrefcount(obj), 2)
 
-    def testNewSubclassInstanceHasTwoRefsUsingGObjectNew(self):
+    def test_new_subclass_instance_has_two_refs_using_gobject_new(self):
         obj = GObject.new(A)
         self.assertEqual(sys.getrefcount(obj), 2)
 
@@ -206,7 +262,7 @@ class TestContextManagers(unittest.TestCase):
         self.obj = self.ContextTestObject()
         self.handler = self.obj.connect('notify::prop', self.on_prop_set)
 
-    def testFreezeNotifyContext(self):
+    def test_freeze_notify_context(self):
         # Verify prop tracking list
         self.assertEqual(self.tracking, [])
         self.obj.props.prop = 1
@@ -215,22 +271,28 @@ class TestContextManagers(unittest.TestCase):
         self.assertEqual(self.tracking, [1, 2])
         self.assertEqual(self.obj.__grefcount__, 1)
 
-        # Using the context manager the tracking list should not be affected
-        # and the GObject reference count should go up.
+        pyref_count = sys.getrefcount(self.obj)
+
+        # Using the context manager the tracking list should not be affected.
+        # The GObject reference count should stay the same and the python
+        # object ref-count should go up.
         with self.obj.freeze_notify():
-            self.assertEqual(self.obj.__grefcount__, 2)
+            self.assertEqual(self.obj.__grefcount__, 1)
+            self.assertEqual(sys.getrefcount(self.obj), pyref_count + 1)
             self.obj.props.prop = 3
             self.assertEqual(self.obj.props.prop, 3)
             self.assertEqual(self.tracking, [1, 2])
 
         # After the context manager, the prop should have been modified,
-        # the tracking list will be modified, and the GObject ref
+        # the tracking list will be modified, and the python object ref
         # count goes back down.
+        gc.collect()
         self.assertEqual(self.obj.props.prop, 3)
         self.assertEqual(self.tracking, [1, 2, 3])
         self.assertEqual(self.obj.__grefcount__, 1)
+        self.assertEqual(sys.getrefcount(self.obj), pyref_count)
 
-    def testHandlerBlockContext(self):
+    def test_handler_block_context(self):
         # Verify prop tracking list
         self.assertEqual(self.tracking, [])
         self.obj.props.prop = 1
@@ -239,10 +301,14 @@ class TestContextManagers(unittest.TestCase):
         self.assertEqual(self.tracking, [1, 2])
         self.assertEqual(self.obj.__grefcount__, 1)
 
-        # Using the context manager the tracking list should not be affected
-        # and the GObject reference count should go up.
+        pyref_count = sys.getrefcount(self.obj)
+
+        # Using the context manager the tracking list should not be affected.
+        # The GObject reference count should stay the same and the python
+        # object ref-count should go up.
         with self.obj.handler_block(self.handler):
-            self.assertEqual(self.obj.__grefcount__, 2)
+            self.assertEqual(self.obj.__grefcount__, 1)
+            self.assertEqual(sys.getrefcount(self.obj), pyref_count + 1)
             self.obj.props.prop = 3
             self.assertEqual(self.obj.props.prop, 3)
             self.assertEqual(self.tracking, [1, 2])
@@ -250,11 +316,13 @@ class TestContextManagers(unittest.TestCase):
         # After the context manager, the prop should have been modified
         # the tracking list should have stayed the same and the GObject ref
         # count goes back down.
+        gc.collect()
         self.assertEqual(self.obj.props.prop, 3)
         self.assertEqual(self.tracking, [1, 2])
         self.assertEqual(self.obj.__grefcount__, 1)
+        self.assertEqual(sys.getrefcount(self.obj), pyref_count)
 
-    def testFreezeNotifyContextNested(self):
+    def test_freeze_notify_context_nested(self):
         self.assertEqual(self.tracking, [])
         with self.obj.freeze_notify():
             self.obj.props.prop = 1
@@ -274,7 +342,7 @@ class TestContextManagers(unittest.TestCase):
         # and the last one sent.
         self.assertEqual(self.tracking, [3])
 
-    def testHandlerBlockContextNested(self):
+    def test_handler_block_context_nested(self):
         self.assertEqual(self.tracking, [])
         with self.obj.handler_block(self.handler):
             self.obj.props.prop = 1
@@ -295,7 +363,7 @@ class TestContextManagers(unittest.TestCase):
         self.assertEqual(self.obj.props.prop, 3)
         self.assertEqual(self.tracking, [])
 
-    def testFreezeNotifyNormalUsageRefCounts(self):
+    def test_freeze_notify_normal_usage_ref_counts(self):
         # Ensure ref counts without using methods as context managers
         # maintain the same count.
         self.assertEqual(self.obj.__grefcount__, 1)
@@ -304,14 +372,14 @@ class TestContextManagers(unittest.TestCase):
         self.obj.thaw_notify()
         self.assertEqual(self.obj.__grefcount__, 1)
 
-    def testHandlerBlockNormalUsageRefCounts(self):
+    def test_handler_block_normal_usage_ref_counts(self):
         self.assertEqual(self.obj.__grefcount__, 1)
         self.obj.handler_block(self.handler)
         self.assertEqual(self.obj.__grefcount__, 1)
         self.obj.handler_unblock(self.handler)
         self.assertEqual(self.obj.__grefcount__, 1)
 
-    def testFreezeNotifyContextError(self):
+    def test_freeze_notify_context_error(self):
         # Test an exception occurring within a freeze context exits the context
         try:
             with self.obj.freeze_notify():
@@ -329,7 +397,7 @@ class TestContextManagers(unittest.TestCase):
         self.obj.props.prop = 2
         self.assertEqual(self.tracking, [1, 2])
 
-    def testHandlerBlockContextError(self):
+    def test_handler_block_context_error(self):
         # Test an exception occurring within a handler block exits the context
         try:
             with self.obj.handler_block(self.handler):
@@ -356,7 +424,7 @@ class TestPropertyBindings(unittest.TestCase):
         self.source = self.TestObject()
         self.target = self.TestObject()
 
-    def testDefaultBinding(self):
+    def test_default_binding(self):
         binding = self.source.bind_property('int_prop', self.target, 'int_prop',
                                             GObject.BindingFlags.DEFAULT)
         binding = binding  # PyFlakes
@@ -371,7 +439,7 @@ class TestPropertyBindings(unittest.TestCase):
         self.assertEqual(self.source.int_prop, 1)
         self.assertEqual(self.target.int_prop, 2)
 
-    def testBiDirectionalBinding(self):
+    def test_bidirectional_binding(self):
         binding = self.source.bind_property('int_prop', self.target, 'int_prop',
                                             GObject.BindingFlags.BIDIRECTIONAL)
         binding = binding  # PyFlakes
@@ -386,7 +454,7 @@ class TestPropertyBindings(unittest.TestCase):
         self.assertEqual(self.source.int_prop, 2)
         self.assertEqual(self.target.int_prop, 2)
 
-    def testTransformToOnly(self):
+    def test_transform_to_only(self):
         def transform_to(binding, value, user_data=None):
             self.assertEqual(user_data, 'test-data')
             return value * 2
@@ -404,7 +472,7 @@ class TestPropertyBindings(unittest.TestCase):
         self.assertEqual(self.source.int_prop, 1)
         self.assertEqual(self.target.int_prop, 1)
 
-    def testTransformFromOnly(self):
+    def test_transform_from_only(self):
         def transform_from(binding, value, user_data=None):
             self.assertEqual(user_data, None)
             return value * 2
@@ -422,7 +490,7 @@ class TestPropertyBindings(unittest.TestCase):
         self.assertEqual(self.source.int_prop, 2)
         self.assertEqual(self.target.int_prop, 1)
 
-    def testTransformBidrectional(self):
+    def test_transform_bidirectional(self):
         def transform_to(binding, value, user_data=None):
             self.assertEqual(user_data, 'test-data')
             return value * 2
@@ -445,7 +513,7 @@ class TestPropertyBindings(unittest.TestCase):
         self.assertEqual(self.source.int_prop, 2)
         self.assertEqual(self.target.int_prop, 4)
 
-    def testExplicitUnbindClearsConnection(self):
+    def test_explicit_unbind_clears_connection(self):
         self.assertEqual(self.source.int_prop, 0)
         self.assertEqual(self.target.int_prop, 0)
 
@@ -465,7 +533,7 @@ class TestPropertyBindings(unittest.TestCase):
         # An already unbound BindingWeakRef will raise if unbind is attempted a second time.
         self.assertRaises(ValueError, binding.unbind)
 
-    def testReferenceCounts(self):
+    def test_reference_counts(self):
         self.assertEqual(self.source.__grefcount__, 1)
         self.assertEqual(self.target.__grefcount__, 1)
 

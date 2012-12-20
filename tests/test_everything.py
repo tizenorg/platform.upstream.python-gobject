@@ -4,14 +4,14 @@
 
 import unittest
 import traceback
-
+import ctypes
+import warnings
 import sys
-from sys import getrefcount
 
-import copy
 try:
     import cairo
     has_cairo = True
+    from gi.repository import Regress as Everything
 except ImportError:
     has_cairo = False
 
@@ -19,7 +19,6 @@ except ImportError:
 from gi.repository import GObject
 from gi.repository import GLib
 from gi.repository import Gio
-from gi.repository import Regress as Everything
 
 try:
     from gi.repository import Gtk
@@ -34,9 +33,20 @@ else:
     UNICHAR = "♥"
 
 
+class RawGList(ctypes.Structure):
+    _fields_ = [('data', ctypes.c_void_p),
+                ('next', ctypes.c_void_p),
+                ('prev', ctypes.c_void_p)]
+
+    @classmethod
+    def from_wrapped(cls, obj):
+        offset = sys.getsizeof(object())  # size of PyObject_HEAD
+        return ctypes.POINTER(cls).from_address(id(obj) + offset)
+
+
+@unittest.skipUnless(has_cairo, 'built without cairo support')
 class TestEverything(unittest.TestCase):
 
-    @unittest.skipUnless(has_cairo, 'built without cairo support')
     def test_cairo_context(self):
         context = Everything.test_cairo_context_full_return()
         self.assertTrue(isinstance(context, cairo.Context))
@@ -45,7 +55,6 @@ class TestEverything(unittest.TestCase):
         context = cairo.Context(surface)
         Everything.test_cairo_context_none_in(context)
 
-    @unittest.skipUnless(has_cairo, 'built without cairo support')
     def test_cairo_surface(self):
         surface = Everything.test_cairo_surface_none_return()
         self.assertTrue(isinstance(surface, cairo.ImageSurface))
@@ -71,6 +80,123 @@ class TestEverything(unittest.TestCase):
         self.assertEqual(surface.get_width(), 10)
         self.assertEqual(surface.get_height(), 10)
 
+    def test_bool(self):
+        self.assertEqual(Everything.test_boolean(False), False)
+        self.assertEqual(Everything.test_boolean(True), True)
+        self.assertEqual(Everything.test_boolean('hello'), True)
+        self.assertEqual(Everything.test_boolean(''), False)
+
+        self.assertEqual(Everything.test_boolean_true(True), True)
+        self.assertEqual(Everything.test_boolean_false(False), False)
+
+    def test_int8(self):
+        self.assertEqual(Everything.test_int8(GObject.G_MAXINT8),
+                         GObject.G_MAXINT8)
+        self.assertEqual(Everything.test_int8(GObject.G_MININT8),
+                         GObject.G_MININT8)
+        self.assertRaises(ValueError, Everything.test_int8, GObject.G_MAXINT8 + 1)
+
+        self.assertEqual(Everything.test_uint8(GObject.G_MAXUINT8),
+                         GObject.G_MAXUINT8)
+        self.assertEqual(Everything.test_uint8(0), 0)
+        self.assertRaises(ValueError, Everything.test_uint8, -1)
+        self.assertRaises(ValueError, Everything.test_uint8, GObject.G_MAXUINT8 + 1)
+
+    def test_int16(self):
+        self.assertEqual(Everything.test_int16(GObject.G_MAXINT16),
+                         GObject.G_MAXINT16)
+        self.assertEqual(Everything.test_int16(GObject.G_MININT16),
+                         GObject.G_MININT16)
+        self.assertRaises(ValueError, Everything.test_int16, GObject.G_MAXINT16 + 1)
+
+        self.assertEqual(Everything.test_uint16(GObject.G_MAXUINT16),
+                         GObject.G_MAXUINT16)
+        self.assertEqual(Everything.test_uint16(0), 0)
+        self.assertRaises(ValueError, Everything.test_uint16, -1)
+        self.assertRaises(ValueError, Everything.test_uint16, GObject.G_MAXUINT16 + 1)
+
+    def test_int32(self):
+        self.assertEqual(Everything.test_int32(GObject.G_MAXINT32),
+                         GObject.G_MAXINT32)
+        self.assertEqual(Everything.test_int32(GObject.G_MININT32),
+                         GObject.G_MININT32)
+        self.assertRaises(ValueError, Everything.test_int32, GObject.G_MAXINT32 + 1)
+
+        self.assertEqual(Everything.test_uint32(GObject.G_MAXUINT32),
+                         GObject.G_MAXUINT32)
+        self.assertEqual(Everything.test_uint32(0), 0)
+        self.assertRaises(ValueError, Everything.test_uint32, -1)
+        self.assertRaises(ValueError, Everything.test_uint32, GObject.G_MAXUINT32 + 1)
+
+    def test_int64(self):
+        self.assertEqual(Everything.test_int64(GObject.G_MAXINT64),
+                         GObject.G_MAXINT64)
+        self.assertEqual(Everything.test_int64(GObject.G_MININT64),
+                         GObject.G_MININT64)
+        self.assertRaises(ValueError, Everything.test_int64, GObject.G_MAXINT64 + 1)
+
+        self.assertEqual(Everything.test_uint64(GObject.G_MAXUINT64),
+                         GObject.G_MAXUINT64)
+        self.assertEqual(Everything.test_uint64(0), 0)
+        self.assertRaises(ValueError, Everything.test_uint64, -1)
+        self.assertRaises(ValueError, Everything.test_uint64, GObject.G_MAXUINT64 + 1)
+
+    def test_int(self):
+        self.assertEqual(Everything.test_int(GObject.G_MAXINT),
+                         GObject.G_MAXINT)
+        self.assertEqual(Everything.test_int(GObject.G_MININT),
+                         GObject.G_MININT)
+        self.assertRaises(ValueError, Everything.test_int, GObject.G_MAXINT + 1)
+
+        self.assertEqual(Everything.test_uint(GObject.G_MAXUINT),
+                         GObject.G_MAXUINT)
+        self.assertEqual(Everything.test_uint(0), 0)
+        self.assertRaises(ValueError, Everything.test_uint, -1)
+        self.assertRaises(ValueError, Everything.test_uint, GObject.G_MAXUINT + 1)
+
+    def test_short(self):
+        self.assertEqual(Everything.test_short(GObject.G_MAXSHORT),
+                         GObject.G_MAXSHORT)
+        self.assertEqual(Everything.test_short(GObject.G_MINSHORT),
+                         GObject.G_MINSHORT)
+        self.assertRaises(ValueError, Everything.test_short, GObject.G_MAXSHORT + 1)
+
+        self.assertEqual(Everything.test_ushort(GObject.G_MAXUSHORT),
+                         GObject.G_MAXUSHORT)
+        self.assertEqual(Everything.test_ushort(0), 0)
+        self.assertRaises(ValueError, Everything.test_ushort, -1)
+        self.assertRaises(ValueError, Everything.test_ushort, GObject.G_MAXUSHORT + 1)
+
+    def test_long(self):
+        self.assertEqual(Everything.test_long(GObject.G_MAXLONG),
+                         GObject.G_MAXLONG)
+        self.assertEqual(Everything.test_long(GObject.G_MINLONG),
+                         GObject.G_MINLONG)
+        self.assertRaises(ValueError, Everything.test_long, GObject.G_MAXLONG + 1)
+
+        self.assertEqual(Everything.test_ulong(GObject.G_MAXULONG),
+                         GObject.G_MAXULONG)
+        self.assertEqual(Everything.test_ulong(0), 0)
+        self.assertRaises(ValueError, Everything.test_ulong, -1)
+        self.assertRaises(ValueError, Everything.test_ulong, GObject.G_MAXULONG + 1)
+
+    def test_size(self):
+        self.assertEqual(Everything.test_ssize(GObject.G_MAXSSIZE),
+                         GObject.G_MAXSSIZE)
+        self.assertEqual(Everything.test_ssize(GObject.G_MINSSIZE),
+                         GObject.G_MINSSIZE)
+        self.assertRaises(ValueError, Everything.test_ssize, GObject.G_MAXSSIZE + 1)
+
+        self.assertEqual(Everything.test_size(GObject.G_MAXSIZE),
+                         GObject.G_MAXSIZE)
+        self.assertEqual(Everything.test_size(0), 0)
+        self.assertRaises(ValueError, Everything.test_size, -1)
+        self.assertRaises(ValueError, Everything.test_size, GObject.G_MAXSIZE + 1)
+
+    def test_timet(self):
+        self.assertEqual(Everything.test_timet(42), 42)
+        self.assertRaises(ValueError, Everything.test_timet, GObject.G_MAXUINT64 + 1)
+
     def test_unichar(self):
         self.assertEqual("c", Everything.test_unichar("c"))
 
@@ -79,6 +205,96 @@ class TestEverything(unittest.TestCase):
         self.assertEqual(UNICHAR, Everything.test_unichar(UNICHAR))
         self.assertRaises(TypeError, Everything.test_unichar, "")
         self.assertRaises(TypeError, Everything.test_unichar, "morethanonechar")
+
+    def test_float(self):
+        self.assertEqual(Everything.test_float(GObject.G_MAXFLOAT),
+                         GObject.G_MAXFLOAT)
+        self.assertEqual(Everything.test_float(GObject.G_MINFLOAT),
+                         GObject.G_MINFLOAT)
+        self.assertRaises(ValueError, Everything.test_float, GObject.G_MAXFLOAT * 2)
+
+    def test_double(self):
+        self.assertEqual(Everything.test_double(GObject.G_MAXDOUBLE),
+                         GObject.G_MAXDOUBLE)
+        self.assertEqual(Everything.test_double(GObject.G_MINDOUBLE),
+                         GObject.G_MINDOUBLE)
+        self.assertRaises(ValueError, Everything.test_double, GObject.G_MAXDOUBLE * 2)
+
+        (two, three) = Everything.test_multi_double_args(2.5)
+        self.assertAlmostEqual(two, 5.0)
+        self.assertAlmostEqual(three, 7.5)
+
+    def test_value(self):
+        self.assertEqual(Everything.test_int_value_arg(GObject.G_MAXINT), GObject.G_MAXINT)
+        self.assertEqual(Everything.test_value_return(GObject.G_MAXINT), GObject.G_MAXINT)
+
+    def test_variant(self):
+        v = Everything.test_gvariant_i()
+        self.assertEqual(v.get_type_string(), 'i')
+        self.assertEqual(v.get_int32(), 1)
+
+        v = Everything.test_gvariant_s()
+        self.assertEqual(v.get_type_string(), 's')
+        self.assertEqual(v.get_string(), 'one')
+
+        v = Everything.test_gvariant_v()
+        self.assertEqual(v.get_type_string(), 'v')
+        vi = v.get_variant()
+        self.assertEqual(vi.get_type_string(), 's')
+        self.assertEqual(vi.get_string(), 'contents')
+
+        v = Everything.test_gvariant_as()
+        self.assertEqual(v.get_type_string(), 'as')
+        self.assertEqual(v.get_strv(), ['one', 'two', 'three'])
+
+        v = Everything.test_gvariant_asv()
+        self.assertEqual(v.get_type_string(), 'a{sv}')
+        self.assertEqual(v.lookup_value('nosuchkey', None), None)
+        name = v.lookup_value('name', None)
+        self.assertEqual(name.get_string(), 'foo')
+        timeout = v.lookup_value('timeout', None)
+        self.assertEqual(timeout.get_int32(), 10)
+
+    def test_string(self):
+        const_str = b'const \xe2\x99\xa5 utf8'
+        if sys.version_info >= (3, 0):
+            const_str = const_str.decode('UTF-8')
+        noconst_str = 'non' + const_str
+
+        self.assertEqual(Everything.test_utf8_const_return(), const_str)
+        self.assertEqual(Everything.test_utf8_nonconst_return(), noconst_str)
+        self.assertEqual(Everything.test_utf8_out(), noconst_str)
+
+        Everything.test_utf8_const_in(const_str)
+        self.assertEqual(Everything.test_utf8_inout(const_str), noconst_str)
+
+        self.assertEqual(Everything.test_filename_return(), ['åäö', '/etc/fstab'])
+
+        # returns g_utf8_strlen() in out argument
+        self.assertEqual(Everything.test_int_out_utf8(''), 0)
+        self.assertEqual(Everything.test_int_out_utf8('hello world'), 11)
+        self.assertEqual(Everything.test_int_out_utf8('åäö'), 3)
+
+        self.assertEqual(Everything.test_utf8_out_out(), ('first', 'second'))
+        self.assertEqual(Everything.test_utf8_out_nonconst_return(), ('first', 'second'))
+
+    def test_enum(self):
+        self.assertEqual(Everything.test_enum_param(Everything.TestEnum.VALUE1), 'value1')
+        self.assertEqual(Everything.test_enum_param(Everything.TestEnum.VALUE3), 'value3')
+        self.assertRaises(TypeError, Everything.test_enum_param, 'hello')
+
+    # FIXME: ValueError: invalid enum value: 2147483648
+    @unittest.expectedFailure
+    def test_enum_unsigned(self):
+        self.assertEqual(Everything.test_unsigned_enum_param(Everything.TestEnumUnsigned.VALUE1), 'value1')
+        self.assertEqual(Everything.test_unsigned_enum_param(Everything.TestEnumUnsigned.VALUE3), 'value3')
+        self.assertRaises(TypeError, Everything.test_unsigned_enum_param, 'hello')
+
+    def test_flags(self):
+        result = Everything.global_get_flags_out()
+        # assert that it's not an int
+        self.assertEqual(type(result), Everything.TestFlags)
+        self.assertEqual(result, Everything.TestFlags.FLAG1 | Everything.TestFlags.FLAG3)
 
     def test_floating(self):
         e = Everything.TestFloating()
@@ -118,6 +334,9 @@ class TestEverything(unittest.TestCase):
         self.assertEqual(struct_b.nested_a.some_int8, struct_b_clone.nested_a.some_int8)
         self.assertEqual(struct_b.nested_a.some_double, struct_b_clone.nested_a.some_double)
         self.assertEqual(struct_b.nested_a.some_enum, struct_b_clone.nested_a.some_enum)
+
+        struct_a = Everything.test_struct_a_parse('ignored')
+        self.assertEqual(struct_a.some_int, 23)
 
     def test_wrong_type_of_arguments(self):
         try:
@@ -171,6 +390,34 @@ class TestEverything(unittest.TestCase):
         # test that there are no duplicates returned
         self.assertEqual(len(attr_list), len(set(attr_list)))
 
+    def test_array(self):
+        self.assertEqual(Everything.test_array_int_in([]), 0)
+        self.assertEqual(Everything.test_array_int_in([1, 5, -2]), 4)
+        self.assertEqual(Everything.test_array_int_out(), [0, 1, 2, 3, 4])
+        self.assertEqual(Everything.test_array_int_full_out(), [0, 1, 2, 3, 4])
+        self.assertEqual(Everything.test_array_int_none_out(), [1, 2, 3, 4, 5])
+        self.assertEqual(Everything.test_array_int_inout([1, 5, 42, -8]), [6, 43, -7])
+
+        if sys.version_info >= (3, 0):
+            self.assertEqual(Everything.test_array_gint8_in(b'\x01\x03\x05'), 9)
+        self.assertEqual(Everything.test_array_gint8_in([1, 3, 5, -50]), -41)
+        self.assertEqual(Everything.test_array_gint16_in([256, 257, -1000, 10000]), 9513)
+        self.assertEqual(Everything.test_array_gint32_in([30000, 1, -2]), 29999)
+        self.assertEqual(Everything.test_array_gint64_in([2 ** 33, 2 ** 34]), 2 ** 33 + 2 ** 34)
+
+        self.assertEqual(Everything.test_array_gtype_in(
+            [GObject.TYPE_STRING, GObject.TYPE_UINT64, GObject.TYPE_VARIANT]),
+            '[gchararray,guint64,GVariant,]')
+
+    def test_array_fixed_size(self):
+        # fixed length of 5
+        self.assertEqual(Everything.test_array_fixed_size_int_in([1, 2, -10, 5, 3]), 1)
+        self.assertRaises(ValueError, Everything.test_array_fixed_size_int_in, [1, 2, 3, 4])
+        self.assertRaises(ValueError, Everything.test_array_fixed_size_int_in, [1, 2, 3, 4, 5, 6])
+
+        self.assertEqual(Everything.test_array_fixed_size_int_out(), [0, 1, 2, 3, 4])
+        self.assertEqual(Everything.test_array_fixed_size_int_return(), [0, 1, 2, 3, 4])
+
     def test_ptrarray(self):
         # transfer container
         result = Everything.test_garray_container_return()
@@ -182,7 +429,43 @@ class TestEverything(unittest.TestCase):
         self.assertEqual(result, ['regress'])
         result = None
 
+    def test_strv(self):
+        self.assertEqual(Everything.test_strv_out(), ['thanks', 'for', 'all', 'the', 'fish'])
+        self.assertEqual(Everything.test_strv_out_c(), ['thanks', 'for', 'all', 'the', 'fish'])
+        self.assertEqual(Everything.test_strv_out_container(), ['1', '2', '3'])
+        self.assertEqual(Everything.test_strv_outarg(), ['1', '2', '3'])
+
+        self.assertEqual(Everything.test_strv_in_gvalue(), ['one', 'two', 'three'])
+
+        Everything.test_strv_in(['1', '2', '3'])
+
+    def test_glist(self):
+        self.assertEqual(Everything.test_glist_nothing_return(), ['1', '2', '3'])
+        self.assertEqual(Everything.test_glist_nothing_return2(), ['1', '2', '3'])
+        self.assertEqual(Everything.test_glist_container_return(), ['1', '2', '3'])
+        self.assertEqual(Everything.test_glist_everything_return(), ['1', '2', '3'])
+
+        Everything.test_glist_nothing_in(['1', '2', '3'])
+        Everything.test_glist_nothing_in2(['1', '2', '3'])
+
+    def test_gslist(self):
+        self.assertEqual(Everything.test_gslist_nothing_return(), ['1', '2', '3'])
+        self.assertEqual(Everything.test_gslist_nothing_return2(), ['1', '2', '3'])
+        self.assertEqual(Everything.test_gslist_container_return(), ['1', '2', '3'])
+        self.assertEqual(Everything.test_gslist_everything_return(), ['1', '2', '3'])
+
+        Everything.test_gslist_nothing_in(['1', '2', '3'])
+        Everything.test_gslist_nothing_in2(['1', '2', '3'])
+
     def test_hash_return(self):
+        expected = {'foo': 'bar', 'baz': 'bat', 'qux': 'quux'}
+
+        self.assertEqual(Everything.test_ghash_null_return(), None)
+        self.assertEqual(Everything.test_ghash_nothing_return(), expected)
+        self.assertEqual(Everything.test_ghash_nothing_return(), expected)
+        self.assertEqual(Everything.test_ghash_container_return(), expected)
+        self.assertEqual(Everything.test_ghash_everything_return(), expected)
+
         result = Everything.test_ghash_gvalue_return()
         self.assertEqual(result['integer'], 12)
         self.assertEqual(result['boolean'], True)
@@ -192,12 +475,22 @@ class TestEverything(unittest.TestCase):
         self.assertEqual(result['enum'], Everything.TestEnum.VALUE2)
         result = None
 
+    # FIXME: CRITICAL **: Unsupported type ghash
+    def disabled_test_hash_return_nested(self):
+        self.assertEqual(Everything.test_ghash_nested_everything_return(), {})
+        self.assertEqual(Everything.test_ghash_nested_everything_return2(), {})
+
     def test_hash_in(self):
         # specifying a simple string array for "strings" does not work due to
         # https://bugzilla.gnome.org/show_bug.cgi?id=666636
         # workaround by explicitly building a GStrv object
         class GStrv(list):
             __gtype__ = GObject.TYPE_STRV
+
+        expected = {'foo': 'bar', 'baz': 'bat', 'qux': 'quux'}
+
+        Everything.test_ghash_nothing_in(expected)
+        Everything.test_ghash_nothing_in2(expected)
 
         data = {'integer': 12,
                 'boolean': True,
@@ -210,24 +503,24 @@ class TestEverything(unittest.TestCase):
         data = None
 
     def test_struct_gpointer(self):
-        l1 = GLib.List()
-        self.assertEqual(l1.data, None)
-        init_refcount = getrefcount(l1)
+        glist = GLib.List()
+        raw = RawGList.from_wrapped(glist)
 
-        l1.data = 'foo'
-        self.assertEqual(l1.data, 'foo')
+        self.assertEqual(glist.data, None)
+        self.assertEqual(raw.contents.data, None)
 
-        l2 = l1
-        self.assertEqual(l1.data, l2.data)
-        self.assertEqual(getrefcount(l1), init_refcount + 1)
+        glist.data = 123
+        self.assertEqual(glist.data, 123)
+        self.assertEqual(raw.contents.data, 123)
 
-        l3 = copy.copy(l1)
-        l3.data = 'bar'
-        self.assertEqual(l1.data, 'foo')
-        self.assertEqual(l2.data, 'foo')
-        self.assertEqual(l3.data, 'bar')
-        self.assertEqual(getrefcount(l1), init_refcount + 1)
-        self.assertEqual(getrefcount(l3), init_refcount)
+        glist.data = None
+        self.assertEqual(glist.data, None)
+        self.assertEqual(raw.contents.data, None)
+
+        # Setting to anything other than an int should raise
+        self.assertRaises(TypeError, setattr, glist.data, 'nan')
+        self.assertRaises(TypeError, setattr, glist.data, object())
+        self.assertRaises(TypeError, setattr, glist.data, 123.321)
 
     def test_struct_opaque(self):
         # we should get a sensible error message
@@ -244,6 +537,7 @@ class TestEverything(unittest.TestCase):
             self.assertTrue('tests/test_everything.py", line' in tb, tb)
 
 
+@unittest.skipUnless(has_cairo, 'built without cairo support')
 class TestNullableArgs(unittest.TestCase):
     def test_in_nullable_hash(self):
         Everything.test_ghash_null_in(None)
@@ -281,9 +575,10 @@ class TestNullableArgs(unittest.TestCase):
         self.assertEqual(None, Everything.TestObj.null_out())
 
 
+@unittest.skipUnless(has_cairo, 'built without cairo support')
 class TestCallbacks(unittest.TestCase):
     called = False
-    main_loop = GObject.MainLoop()
+    main_loop = GLib.MainLoop()
 
     def test_callback(self):
         TestCallbacks.called = False
@@ -337,27 +632,70 @@ class TestCallbacks(unittest.TestCase):
         self.assertEqual(Everything.test_callback(callback), 44)
         self.assertTrue(TestCallbacks.called)
 
-    def test_callback_async(self):
+    def test_callback_scope_async(self):
         TestCallbacks.called = False
+        ud = 'Test Value 44'
 
-        def callback(foo):
+        def callback(user_data):
+            self.assertEqual(user_data, ud)
             TestCallbacks.called = True
-            return foo
+            return 44
 
-        Everything.test_callback_async(callback, 44)
-        i = Everything.test_callback_thaw_async()
-        self.assertEqual(44, i)
+        ud_refcount = sys.getrefcount(ud)
+        callback_refcount = sys.getrefcount(callback)
+
+        self.assertEqual(Everything.test_callback_async(callback, ud), None)
+        # Callback should not have run and the ref count is increased by 1
+        self.assertEqual(TestCallbacks.called, False)
+        self.assertEqual(sys.getrefcount(callback), callback_refcount + 1)
+        self.assertEqual(sys.getrefcount(ud), ud_refcount + 1)
+
+        # test_callback_thaw_async will run the callback previously supplied.
+        # references should be auto decremented after this call.
+        self.assertEqual(Everything.test_callback_thaw_async(), 44)
         self.assertTrue(TestCallbacks.called)
 
-    def test_callback_scope_call(self):
+        # Make sure refcounts are returned to normal
+        self.assertEqual(sys.getrefcount(callback), callback_refcount)
+        self.assertEqual(sys.getrefcount(ud), ud_refcount)
+
+    def test_callback_scope_call_multi(self):
+        # This tests a callback that gets called multiple times from a
+        # single scope call in python.
         TestCallbacks.called = 0
 
         def callback():
             TestCallbacks.called += 1
-            return 0
+            return TestCallbacks.called
 
-        Everything.test_multi_callback(callback)
+        refcount = sys.getrefcount(callback)
+        result = Everything.test_multi_callback(callback)
+        # first callback should give 1, second 2, and the function sums them up
+        self.assertEqual(result, 3)
         self.assertEqual(TestCallbacks.called, 2)
+        self.assertEqual(sys.getrefcount(callback), refcount)
+
+    # FIXME: TypeError: callback() takes 2 positional arguments but 4 were given
+    # does not remove the array length arguments
+    @unittest.expectedFailure
+    def test_callback_scope_call_array(self):
+        # This tests a callback that gets called multiple times from a
+        # single scope call in python with array arguments
+        TestCallbacks.callargs = []
+
+        # works with:
+        #def callback(one, one_length, two, two_length):
+        def callback(one, two):
+            TestCallbacks.callargs.append((one, two))
+            return len(TestCallbacks.callargs)
+
+        refcount = sys.getrefcount(callback)
+        result = Everything.test_array_callback(callback)
+        # first callback should give 1, second 2, and the function sums them up
+        self.assertEqual(result, 3)
+        self.assertEqual(TestCallbacks.callargs,
+                         [([-1, 0, 1, 2], ['one', 'two', 'three'])] * 2)
+        self.assertEqual(sys.getrefcount(callback), refcount)
 
     def test_callback_userdata(self):
         TestCallbacks.called = 0
@@ -373,27 +711,9 @@ class TestCallbacks(unittest.TestCase):
 
         self.assertEqual(TestCallbacks.called, 100)
 
-    def test_callback_userdata_refcount(self):
-        TestCallbacks.called = False
-
-        def callback(userdata):
-            TestCallbacks.called = True
-            return 1
-
-        ud = "Test User Data"
-
-        start_ref_count = getrefcount(ud)
-        for i in range(100):
-            Everything.test_callback_destroy_notify(callback, ud)
-
-        Everything.test_callback_thaw_notifications()
-        end_ref_count = getrefcount(ud)
-
-        self.assertEqual(start_ref_count, end_ref_count)
-
     def test_async_ready_callback(self):
         TestCallbacks.called = False
-        TestCallbacks.main_loop = GObject.MainLoop()
+        TestCallbacks.main_loop = GLib.MainLoop()
 
         def callback(obj, result, user_data):
             TestCallbacks.main_loop.quit()
@@ -405,15 +725,73 @@ class TestCallbacks(unittest.TestCase):
 
         self.assertTrue(TestCallbacks.called)
 
-    def test_callback_destroy_notify(self):
-        def callback(user_data):
-            TestCallbacks.called = True
-            return 42
+    def test_callback_scope_notified_with_destroy(self):
+        TestCallbacks.called = 0
+        ud = 'Test scope notified data 33'
 
-        TestCallbacks.called = False
-        self.assertEqual(Everything.test_callback_destroy_notify(callback, 42), 42)
-        self.assertTrue(TestCallbacks.called)
-        self.assertEqual(Everything.test_callback_thaw_notifications(), 42)
+        def callback(user_data):
+            self.assertEqual(user_data, ud)
+            TestCallbacks.called += 1
+            return 33
+
+        value_refcount = sys.getrefcount(ud)
+        callback_refcount = sys.getrefcount(callback)
+
+        # Callback is immediately called.
+        for i in range(100):
+            res = Everything.test_callback_destroy_notify(callback, ud)
+            self.assertEqual(res, 33)
+
+        self.assertEqual(TestCallbacks.called, 100)
+        self.assertEqual(sys.getrefcount(callback), callback_refcount + 100)
+        self.assertEqual(sys.getrefcount(ud), value_refcount + 100)
+
+        # thaw will call the callback again, this time resources should be freed
+        self.assertEqual(Everything.test_callback_thaw_notifications(), 33 * 100)
+        self.assertEqual(TestCallbacks.called, 200)
+        self.assertEqual(sys.getrefcount(callback), callback_refcount)
+        self.assertEqual(sys.getrefcount(ud), value_refcount)
+
+    def test_callback_scope_notified_with_destroy_no_user_data(self):
+        TestCallbacks.called = 0
+
+        def callback(user_data):
+            self.assertEqual(user_data, None)
+            TestCallbacks.called += 1
+            return 34
+
+        callback_refcount = sys.getrefcount(callback)
+
+        # Run with warning as exception
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("error")
+            self.assertRaises(RuntimeWarning,
+                              Everything.test_callback_destroy_notify_no_user_data,
+                              callback)
+
+        self.assertEqual(TestCallbacks.called, 0)
+        self.assertEqual(sys.getrefcount(callback), callback_refcount)
+
+        # Run with warning as warning
+        with warnings.catch_warnings(record=True) as w:
+            # Cause all warnings to always be triggered.
+            warnings.simplefilter("default")
+            # Trigger a warning.
+            res = Everything.test_callback_destroy_notify_no_user_data(callback)
+            # Verify some things
+            self.assertEqual(len(w), 1)
+            self.assertTrue(issubclass(w[-1].category, RuntimeWarning))
+            self.assertTrue('Callables passed to' in str(w[-1].message))
+
+        self.assertEqual(res, 34)
+        self.assertEqual(TestCallbacks.called, 1)
+        self.assertEqual(sys.getrefcount(callback), callback_refcount + 1)
+
+        # thaw will call the callback again,
+        # refcount will not go down without user_data parameter
+        self.assertEqual(Everything.test_callback_thaw_notifications(), 34)
+        self.assertEqual(TestCallbacks.called, 2)
+        self.assertEqual(sys.getrefcount(callback), callback_refcount + 1)
 
     def test_callback_in_methods(self):
         object_ = Everything.TestObj()
@@ -431,12 +809,17 @@ class TestCallbacks(unittest.TestCase):
         self.assertTrue(TestCallbacks.called)
 
         def callbackWithUserData(user_data):
-            TestCallbacks.called = True
+            TestCallbacks.called += 1
             return 42
 
-        TestCallbacks.called = False
+        TestCallbacks.called = 0
         Everything.TestObj.new_callback(callbackWithUserData, None)
-        self.assertTrue(TestCallbacks.called)
+        self.assertEqual(TestCallbacks.called, 1)
+        # Note: using "new_callback" adds the notification to the same global
+        # list as Everything.test_callback_destroy_notify, so thaw the list
+        # so we don't get confusion between tests.
+        self.assertEqual(Everything.test_callback_thaw_notifications(), 42)
+        self.assertEqual(TestCallbacks.called, 2)
 
     def test_callback_none(self):
         # make sure this doesn't assert or crash
@@ -486,7 +869,18 @@ class TestCallbacks(unittest.TestCase):
         self.assertEqual(mydict, {'foo': 1, 'bar': 2, 'new': 42})
 
 
+@unittest.skipUnless(has_cairo, 'built without cairo support')
 class TestClosures(unittest.TestCase):
+    def test_no_arg(self):
+        def callback():
+            self.called = True
+            return 42
+
+        self.called = False
+        result = Everything.test_closure(callback)
+        self.assertTrue(self.called)
+        self.assertEqual(result, 42)
+
     def test_int_arg(self):
         def callback(num):
             self.called = True
@@ -520,7 +914,24 @@ class TestClosures(unittest.TestCase):
         self.assertRaises(TypeError, Everything.test_closure_variant, callback, 'foo')
         self.assertFalse(self.called)
 
+    def test_variant_wrong_return_type(self):
+        def callback(variant):
+            return 'no_variant'
 
+        # reset last error
+        sys.last_type = None
+
+        # this does not directly raise an exception (see
+        # https://bugzilla.gnome.org/show_bug.cgi?id=616279)
+        result = Everything.test_closure_variant(callback, GLib.Variant('i', 42))
+        # ... but the result shouldn't be a string
+        self.assertEqual(result, None)
+        # and the error should be shown
+        self.assertEqual(sys.last_type, TypeError)
+        self.assertTrue('return value' in str(sys.last_value), sys.last_value)
+
+
+@unittest.skipUnless(has_cairo, 'built without cairo support')
 class TestProperties(unittest.TestCase):
 
     def test_basic(self):
@@ -577,7 +988,27 @@ class TestProperties(unittest.TestCase):
         self.assertTrue(isinstance(object_.props.boxed, Everything.TestBoxed))
         self.assertEqual(object_.props.boxed.some_int8, 42)
 
+    def test_boxed_alternative_constructor(self):
+        boxed = Everything.TestBoxed.new_alternative_constructor1(5)
+        self.assertEqual(boxed.some_int8, 5)
+
+        boxed = Everything.TestBoxed.new_alternative_constructor2(5, 3)
+        self.assertEqual(boxed.some_int8, 8)
+
+        boxed = Everything.TestBoxed.new_alternative_constructor3("-3")
+        self.assertEqual(boxed.some_int8, -3)
+
     def test_boxed_equality(self):
+        boxed42 = Everything.TestBoxed.new_alternative_constructor1(42)
+        boxed5 = Everything.TestBoxed.new_alternative_constructor1(5)
+        boxed42_2 = Everything.TestBoxed.new_alternative_constructor2(41, 1)
+
+        self.assertFalse(boxed42.equals(boxed5))
+        self.assertTrue(boxed42.equals(boxed42_2))
+        self.assertTrue(boxed42_2.equals(boxed42))
+        self.assertTrue(boxed42.equals(boxed42))
+
+    def test_boxed_c_equality(self):
         boxed = Everything.TestBoxedC()
         # TestBoxedC uses refcounting, so we know that
         # the pointer is the same when copied
@@ -596,7 +1027,20 @@ class TestProperties(unittest.TestCase):
         object_.props.gtype = str
         self.assertEqual(object_.props.gtype, GObject.TYPE_STRING)
 
+    def test_parent_class(self):
+        class A(Everything.TestObj):
+            prop1 = GObject.Property(type=int)
 
+        a = A()
+        a.props.int = 20
+        self.assertEqual(a.props.int, 20)
+
+        # test parent property which needs introspection
+        a.props.list = ("str1", "str2")
+        self.assertEqual(a.props.list, ["str1", "str2"])
+
+
+@unittest.skipUnless(has_cairo, 'built without cairo support')
 class TestTortureProfile(unittest.TestCase):
     def test_torture_profile(self):
         import time
@@ -659,6 +1103,7 @@ class TestTortureProfile(unittest.TestCase):
         print("\tTotal: %f sec" % total_time)
 
 
+@unittest.skipUnless(has_cairo, 'built without cairo support')
 class TestAdvancedInterfaces(unittest.TestCase):
     def test_array_objs(self):
         obj1, obj2 = Everything.test_array_fixed_out_objects()
@@ -683,6 +1128,7 @@ class TestAdvancedInterfaces(unittest.TestCase):
         self.assertEqual(ret, None)
 
 
+@unittest.skipUnless(has_cairo, 'built without cairo support')
 class TestSignals(unittest.TestCase):
     def test_object_param_signal(self):
         obj = Everything.TestObj()
@@ -750,8 +1196,9 @@ class TestSignals(unittest.TestCase):
         self.assertEqual(obj.callback_i, GObject.G_MAXUINT64)
 
 
+@unittest.skipUnless(has_cairo, 'built without cairo support')
+@unittest.skipUnless(Gtk, 'Gtk not available')
 class TestPango(unittest.TestCase):
-    @unittest.skipUnless(Gtk, 'Gtk not available')
     def test_cairo_font_options(self):
         screen = Gtk.Window().get_screen()
         font_opts = screen.get_font_options()

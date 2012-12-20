@@ -13,14 +13,17 @@ from gi.repository.GObject import \
     TYPE_UINT64, TYPE_GTYPE, TYPE_INVALID, TYPE_NONE, TYPE_STRV, \
     TYPE_INTERFACE, TYPE_CHAR, TYPE_UCHAR, TYPE_BOOLEAN, TYPE_FLOAT, \
     TYPE_DOUBLE, TYPE_POINTER, TYPE_BOXED, TYPE_PARAM, TYPE_OBJECT, \
-    TYPE_STRING, TYPE_PYOBJECT
+    TYPE_STRING, TYPE_PYOBJECT, TYPE_VARIANT
 
 from gi.repository.GObject import \
-    G_MININT, G_MAXINT, G_MAXUINT, G_MINLONG, G_MAXLONG, G_MAXULONG
+    G_MININT, G_MAXINT, G_MAXUINT, G_MINLONG, G_MAXLONG, G_MAXULONG, \
+    G_MAXUINT64, G_MAXINT64, G_MININT64
 
 from gi.repository import Gio
 from gi.repository import GLib
+from gi.repository import Regress
 from gi.repository import GIMarshallingTests
+from gi._gobject import propertyhelper
 
 if sys.version_info < (3, 0):
     TEST_UTF8 = "\xe2\x99\xa5"
@@ -59,6 +62,42 @@ class PropertyObject(GObject.GObject):
     strings = GObject.Property(
         type=TYPE_STRV, flags=PARAM_READWRITE | PARAM_CONSTRUCT)
 
+    variant = GObject.Property(
+        type=TYPE_VARIANT, flags=PARAM_READWRITE | PARAM_CONSTRUCT)
+
+    variant_def = GObject.Property(
+        type=TYPE_VARIANT, flags=PARAM_READWRITE | PARAM_CONSTRUCT,
+        default=GLib.Variant('i', 42))
+
+
+class PropertyInheritanceObject(Regress.TestObj):
+    # override property from the base class, with a different type
+    string = GObject.Property(type=int)
+
+    # a property entirely defined at the Python level
+    python_prop = GObject.Property(type=str)
+
+
+class PropertySubClassObject(PropertyInheritanceObject):
+    # override property from the base class, with a different type
+    python_prop = GObject.Property(type=int)
+
+
+class TestPropertyInheritanceObject(unittest.TestCase):
+    def test_override_gi_property(self):
+        self.assertNotEqual(Regress.TestObj.props.string.value_type,
+                            PropertyInheritanceObject.props.string.value_type)
+        obj = PropertyInheritanceObject()
+        self.assertEqual(type(obj.props.string), int)
+        obj.props.string = 4
+        self.assertEqual(obj.props.string, 4)
+
+    def test_override_python_property(self):
+        obj = PropertySubClassObject()
+        self.assertEqual(type(obj.props.python_prop), int)
+        obj.props.python_prop = 5
+        self.assertEqual(obj.props.python_prop, 5)
+
 
 class TestPropertyObject(unittest.TestCase):
     def test_get_set(self):
@@ -81,19 +120,24 @@ class TestPropertyObject(unittest.TestCase):
 
     def test_iteration(self):
         for obj in (PropertyObject.props, PropertyObject().props):
+            names = []
             for pspec in obj:
                 gtype = GType(pspec)
                 self.assertEqual(gtype.parent.name, 'GParam')
-                self.assertTrue(pspec.name in ['normal',
-                                               'construct',
-                                               'construct-only',
-                                               'uint64',
-                                               'enum',
-                                               'flags',
-                                               'gtype',
-                                               'strings',
-                                               'boxed'])
-            self.assertEqual(len(obj), 9)
+                names.append(pspec.name)
+
+            names.sort()
+            self.assertEqual(names, ['boxed',
+                                     'construct',
+                                     'construct-only',
+                                     'enum',
+                                     'flags',
+                                     'gtype',
+                                     'normal',
+                                     'strings',
+                                     'uint64',
+                                     'variant',
+                                     'variant-def'])
 
     def test_normal(self):
         obj = new(PropertyObject, normal="123")
@@ -299,6 +343,52 @@ class TestPropertyObject(unittest.TestCase):
         self.assertRaises(TypeError, GObject.Property, type=TYPE_STRV,
                           default=['hello', 1])
 
+    def test_variant(self):
+        obj = new(PropertyObject)
+
+        self.assertEqual(obj.props.variant, None)
+        self.assertEqual(obj.variant, None)
+
+        obj.variant = GLib.Variant('s', 'hello')
+        self.assertEqual(obj.variant.print_(True), "'hello'")
+
+        obj.variant = GLib.Variant('b', True)
+        self.assertEqual(obj.variant.print_(True), "true")
+
+        obj.props.variant = GLib.Variant('y', 2)
+        self.assertEqual(obj.variant.print_(True), "byte 0x02")
+
+        obj.variant = None
+        self.assertEqual(obj.variant, None)
+
+        # set in constructor
+        obj = new(PropertyObject, variant=GLib.Variant('u', 5))
+        self.assertEqual(obj.props.variant.print_(True), 'uint32 5')
+
+        GObject.Property(type=TYPE_VARIANT, default=GLib.Variant('i', 1))
+
+        # incompatible types
+        self.assertRaises(TypeError, setattr, obj, 'variant', 'foo')
+        self.assertRaises(TypeError, setattr, obj, 'variant', 42)
+
+        self.assertRaises(TypeError, GObject.Property, type=TYPE_VARIANT,
+                          default='foo')
+        self.assertRaises(TypeError, GObject.Property, type=TYPE_VARIANT,
+                          default=object())
+
+    def test_variant_default(self):
+        obj = new(PropertyObject)
+
+        self.assertEqual(obj.props.variant_def.print_(True), '42')
+        self.assertEqual(obj.variant_def.print_(True), '42')
+
+        obj.props.variant_def = GLib.Variant('y', 2)
+        self.assertEqual(obj.variant_def.print_(True), "byte 0x02")
+
+        # set in constructor
+        obj = new(PropertyObject, variant_def=GLib.Variant('u', 5))
+        self.assertEqual(obj.props.variant_def.print_(True), 'uint32 5')
+
     def test_range(self):
         # kiwi code
         def max(c):
@@ -495,17 +585,13 @@ class TestProperty(unittest.TestCase):
         self.assertEqual(o.prop_name, 10)
 
     def test_range(self):
-        maxint64 = 2 ** 62 - 1
-        minint64 = -2 ** 62 - 1
-        maxuint64 = 2 ** 63 - 1
-
         types_ = [
             (TYPE_INT, G_MININT, G_MAXINT),
             (TYPE_UINT, 0, G_MAXUINT),
             (TYPE_LONG, G_MINLONG, G_MAXLONG),
             (TYPE_ULONG, 0, G_MAXULONG),
-            (TYPE_INT64, minint64, maxint64),
-            (TYPE_UINT64, 0, maxuint64),
+            (TYPE_INT64, G_MININT64, G_MAXINT64),
+            (TYPE_UINT64, 0, G_MAXUINT64),
             ]
 
         for gtype, min, max in types_:
@@ -688,14 +774,20 @@ class TestProperty(unittest.TestCase):
         del t
         self.assertEqual(sys.getrefcount(o), rc)
 
-    def test_doc_string_as_blurb(self):
+    def test_doc_strings(self):
         class C(GObject.GObject):
+            foo_blurbed = GObject.Property(type=int, blurb='foo_blurbed doc string')
+
             @GObject.Property
-            def blurbed(self):
-                """blurbed doc string"""
+            def foo_getter(self):
+                """foo_getter doc string"""
                 return 0
 
-        self.assertEqual(C.blurbed.blurb, 'blurbed doc string')
+        self.assertEqual(C.foo_blurbed.blurb, 'foo_blurbed doc string')
+        self.assertEqual(C.foo_blurbed.__doc__, 'foo_blurbed doc string')
+
+        self.assertEqual(C.foo_getter.blurb, 'foo_getter doc string')
+        self.assertEqual(C.foo_getter.__doc__, 'foo_getter doc string')
 
     def test_python_to_glib_type_mapping(self):
         tester = GObject.Property()
@@ -721,6 +813,70 @@ class TestProperty(unittest.TestCase):
             self.assertEqual(tester._type_from_python(type_), type_)
 
         self.assertRaises(TypeError, tester._type_from_python, types.CodeType)
+
+
+class TestInstallProperties(unittest.TestCase):
+    # These tests only test how signalhelper.install_signals works
+    # with the __gsignals__ dict and therefore does not need to use
+    # GObject as a base class because that would automatically call
+    # install_signals within the meta-class.
+    class Base(object):
+        __gproperties__ = {'test': (0, '', '', 0, 0, 0, 0)}
+
+    class Sub1(Base):
+        pass
+
+    class Sub2(Base):
+        @GObject.Property(type=int)
+        def sub2test(self):
+            return 123
+
+    class ClassWithPropertyAndGetterVFunc(object):
+        @GObject.Property(type=int)
+        def sub2test(self):
+            return 123
+
+        def do_get_property(self, name):
+            return 321
+
+    class ClassWithPropertyRedefined(object):
+        __gproperties__ = {'test': (0, '', '', 0, 0, 0, 0)}
+        test = GObject.Property(type=int)
+
+    def setUp(self):
+        self.assertEqual(len(self.Base.__gproperties__), 1)
+        propertyhelper.install_properties(self.Base)
+        self.assertEqual(len(self.Base.__gproperties__), 1)
+
+    def test_subclass_without_properties_is_not_modified(self):
+        self.assertFalse('__gproperties__' in self.Sub1.__dict__)
+        propertyhelper.install_properties(self.Sub1)
+        self.assertFalse('__gproperties__' in self.Sub1.__dict__)
+
+    def test_subclass_with_decorator_gets_gproperties_dict(self):
+        # Sub2 has Property instances but will not have a __gproperties__
+        # until install_properties is called
+        self.assertFalse('__gproperties__' in self.Sub2.__dict__)
+        self.assertFalse('do_get_property' in self.Sub2.__dict__)
+        self.assertFalse('do_set_property' in self.Sub2.__dict__)
+
+        propertyhelper.install_properties(self.Sub2)
+        self.assertTrue('__gproperties__' in self.Sub2.__dict__)
+        self.assertEqual(len(self.Base.__gproperties__), 1)
+        self.assertEqual(len(self.Sub2.__gproperties__), 1)
+        self.assertTrue('sub2test' in self.Sub2.__gproperties__)
+
+        # get/set vfuncs should have been added
+        self.assertTrue('do_get_property' in self.Sub2.__dict__)
+        self.assertTrue('do_set_property' in self.Sub2.__dict__)
+
+    def test_object_with_property_and_do_get_property_vfunc_raises(self):
+        self.assertRaises(TypeError, propertyhelper.install_properties,
+                          self.ClassWithPropertyAndGetterVFunc)
+
+    def test_same_name_property_definitions_raises(self):
+        self.assertRaises(ValueError, propertyhelper.install_properties,
+                          self.ClassWithPropertyRedefined)
 
 if __name__ == '__main__':
     unittest.main()

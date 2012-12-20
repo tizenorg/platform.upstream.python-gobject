@@ -1,7 +1,7 @@
 ACLOCAL_AMFLAGS = -I m4 ${ACLOCAL_FLAGS}
 AUTOMAKE_OPTIONS = 1.7
 
-SUBDIRS = examples gi tests
+SUBDIRS = examples gi tests pygtkcompat
 
 PLATFORM_VERSION = 3.0
 
@@ -9,10 +9,10 @@ CLEANFILES = \
 	`find "$(builddir)" -type f -name "*.pyc" -print`
 
 EXTRA_DIST = \
-	ChangeLog.pre-2.18 \
 	pygobject-$(PLATFORM_VERSION).pc.in \
 	PKG-INFO \
 	PKG-INFO.in \
+	pygi-convert.sh \
 	m4/as-ac-expand.m4 \
 	m4/jhflags.m4 \
 	m4/python.m4
@@ -55,18 +55,21 @@ pkgconfig_DATA = pygobject-$(PLATFORM_VERSION).pc
 pyexec_LTLIBRARIES =
 
 # install pth file.
+
+EGG_NAME = $(PACKAGE)-$(PACKAGE_VERSION)-py$(PYTHON_VERSION)-$(PLATFORM)
+
 install-data-local:
-	$(mkinstalldirs) $(DESTDIR)$(pythondir)
+	$(mkinstalldirs) $(DESTDIR)$(pyexecdir)
+	cp $(top_builddir)/PKG-INFO $(DESTDIR)$(pyexecdir)/$(EGG_NAME).egg-info
 install-exec-local:
 	$(mkinstalldirs) $(DESTDIR)$(pyexecdir)
 uninstall-local:
-
-EGG_NAME = $(PACKAGE)-$(PACKAGE_VERSION)-py$(PYTHON_VERSION)-$(PLATFORM).egg
+	rm -f $(DESTDIR)$(pyexecdir)/$(EGG_NAME).egg-info
 
 egg: EGG_TMPDIR:=$(TMPDIR)/$(PACKAGE)-$(PACKAGE_VERSION)
 egg: $(top_srcdir)/gobject/gobject.la PKG-INFO
 	rm -fr $(EGG_TMPDIR)
-	echo $(EGG_NAME)
+	echo $(EGG_NAME).egg
 	$(MKDIR_P) $(EGG_TMPDIR)
 	$(MKDIR_P) $(EGG_TMPDIR)/EGG-INFO
 	$(MAKE) -C gobject install-pkgpyexecLTLIBRARIES pkgpyexecdir=$(EGG_TMPDIR)
@@ -74,8 +77,8 @@ egg: $(top_srcdir)/gobject/gobject.la PKG-INFO
 	$(INSTALL) PKG-INFO $(EGG_TMPDIR)/EGG-INFO
 	echo "gobject.so" >> $(EGG_TMPDIR)/EGG-INFO/native_libs.txt
 	( echo "gobject" ) >> $(EGG_TMPDIR)/EGG-INFO/top_level.txt
-	cd $(EGG_TMPDIR) && zip -rq $(EGG_NAME) .
-	mv $(EGG_TMPDIR)/$(EGG_NAME) .
+	cd $(EGG_TMPDIR) && zip -rq $(EGG_NAME).egg .
+	mv $(EGG_TMPDIR)/$(EGG_NAME).egg .
 	rm -fr $(EGG_TMPDIR)
 
 doc-dist:
@@ -142,3 +145,5 @@ check.nemiver:
 
 check.valgrind:
 	cd tests && $(MAKE) check.valgrind
+
+@GNOME_CODE_COVERAGE_RULES@

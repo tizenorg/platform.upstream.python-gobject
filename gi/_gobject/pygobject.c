@@ -51,6 +51,25 @@ GQuark pygobject_wrapper_key;
 GQuark pygobject_has_updated_constructor_key;
 GQuark pygobject_instance_data_key;
 
+/* Copied from glib. gobject uses hyphens in property names, but in Python
+ * we can only represent hyphens as underscores. Convert underscores to
+ * hyphens for glib compatibility. */
+static void
+canonicalize_key (gchar *key)
+{
+    gchar *p;
+
+    for (p = key; *p != 0; p++)
+    {
+        gchar c = *p;
+
+        if (c != '-' &&
+            (c < '0' || c > '9') &&
+            (c < 'A' || c > 'Z') &&
+            (c < 'a' || c > 'z'))
+                *p = '-';
+    }
+}
 
 /* -------------- class <-> wrapper manipulation --------------- */
 
@@ -226,6 +245,8 @@ build_parameter_list(GObjectClass *class)
 	g_free(name);
     }
 
+    g_type_class_unref(class);
+
     if (props)
         g_free(props);
     
@@ -235,7 +256,7 @@ build_parameter_list(GObjectClass *class)
 static PyObject*
 PyGProps_getattro(PyGProps *self, PyObject *attr)
 {
-    char *attr_name;
+    char *attr_name, *property_name;
     GObjectClass *class;
     GParamSpec *pspec;
     GValue value = { 0, };
@@ -250,16 +271,18 @@ PyGProps_getattro(PyGProps *self, PyObject *attr)
     class = g_type_class_ref(self->gtype);
     
     if (!strcmp(attr_name, "__members__")) {
-	return build_parameter_list(class);
+        ret = build_parameter_list(class);
+        g_type_class_unref(class);
+	return ret;
     }
 
-    if (self->pygobject != NULL) {
-        ret = pygi_get_property_value (self->pygobject, attr_name);
-        if (ret != NULL)
-            return ret;
-    }
-
-    pspec = g_object_class_find_property(class, attr_name);
+    /* g_object_class_find_property recurses through the class hierarchy,
+     * so the resulting pspec tells us the owner_type that owns the property
+     * we're dealing with. */
+    property_name = g_strdup(attr_name);
+    canonicalize_key(property_name);
+    pspec = g_object_class_find_property(class, property_name);
+    g_free(property_name);
     g_type_class_unref(class);
 
     if (!pspec) {
@@ -272,14 +295,23 @@ PyGProps_getattro(PyGProps *self, PyObject *attr)
 	return NULL;
     }
 
-    /* If we're doing it without an instance, return a GParamSpec */
     if (!self->pygobject) {
+        /* If we're doing it without an instance, return a GParamSpec */
         return pyg_param_spec_new(pspec);
     }
+
+    /* See if the property's class is from the gi repository. If so,
+     * use gi to correctly read the property value. */
+    ret = pygi_get_property_value (self->pygobject, pspec);
+    if (ret != NULL) {
+        return ret;
+    }
     
+    /* If we reach here, it must be a property defined outside of gi.
+     * Just do a straightforward read. */
     g_value_init(&value, G_PARAM_SPEC_VALUE_TYPE(pspec));
     pyg_begin_allow_threads;
-    g_object_get_property(self->pygobject->obj, attr_name, &value);
+    g_object_get_property(self->pygobject->obj, pspec->name, &value);
     pyg_end_allow_threads;
     ret = pyg_param_gvalue_as_pyobject(&value, TRUE, pspec);
     g_value_unset(&value);
@@ -289,7 +321,6 @@ PyGProps_getattro(PyGProps *self, PyObject *attr)
 
 static gboolean
 set_property_from_pspec(GObject *obj,
-			char *attr_name,
 			GParamSpec *pspec,
 			PyObject *pvalue)
 {
@@ -298,13 +329,13 @@ set_property_from_pspec(GObject *obj,
     if (pspec->flags & G_PARAM_CONSTRUCT_ONLY) {
 	PyErr_Format(PyExc_TypeError,
 		     "property '%s' can only be set in constructor",
-		     attr_name);
+		     pspec->name);
 	return FALSE;
     }	
 
     if (!(pspec->flags & G_PARAM_WRITABLE)) {
 	PyErr_Format(PyExc_TypeError,
-		     "property '%s' is not writable", attr_name);
+		     "property '%s' is not writable", pspec->name);
 	return FALSE;
     }	
 
@@ -316,7 +347,7 @@ set_property_from_pspec(GObject *obj,
     }
 
     pyg_begin_allow_threads;
-    g_object_set_property(obj, attr_name, &value);
+    g_object_set_property(obj, pspec->name, &value);
     pyg_end_allow_threads;
 
     g_value_unset(&value);
@@ -330,7 +361,7 @@ static int
 PyGProps_setattro(PyGProps *self, PyObject *attr, PyObject *pvalue)
 {
     GParamSpec *pspec;
-    char *attr_name;
+    char *attr_name, *property_name;
     GObject *obj;
     int ret = -1;
     
@@ -352,20 +383,33 @@ PyGProps_setattro(PyGProps *self, PyObject *attr, PyObject *pvalue)
         return -1;
     }
 
-    ret = pygi_set_property_value (self->pygobject, attr_name, pvalue);
+    obj = self->pygobject->obj;
+
+    property_name = g_strdup(attr_name);
+    canonicalize_key(property_name);
+
+    /* g_object_class_find_property recurses through the class hierarchy,
+     * so the resulting pspec tells us the owner_type that owns the property
+     * we're dealing with. */
+    pspec = g_object_class_find_property(G_OBJECT_GET_CLASS(obj),
+                                         property_name);
+    g_free(property_name);
+    if (!pspec) {
+	return PyObject_GenericSetAttr((PyObject *)self, attr, pvalue);
+    }
+
+    /* See if the property's class is from the gi repository. If so,
+     * use gi to correctly read the property value. */
+    ret = pygi_set_property_value (self->pygobject, pspec, pvalue);
     if (ret == 0)
         return 0;
     else if (ret == -1)
         if (PyErr_Occurred())
             return -1;
 
-    obj = self->pygobject->obj;
-    pspec = g_object_class_find_property(G_OBJECT_GET_CLASS(obj), attr_name);
-    if (!pspec) {
-	return PyObject_GenericSetAttr((PyObject *)self, attr, pvalue);
-    }
-
-    if (!set_property_from_pspec(obj, attr_name, pspec, pvalue))
+    /* If we reach here, it must be a property defined outside of gi.
+     * Just do a straightforward set. */
+    if (!set_property_from_pspec(obj, pspec, pvalue))
 	return -1;
 				  
     return 0;
@@ -1011,115 +1055,6 @@ pygobject_watch_closure(PyObject *self, GClosure *closure)
 }
 
 
-/* -------------- Freeze Notify Context Manager ----------------- */
-
-/**
- * pygcontext_manager_enter
- * @self: Freeze or Block context instance
- *
- * Method used for __enter__ on both GContextFeezeNotify and
- * GContextHandlerBlock. Does nothing since this is an object returned
- * by the freeze_notify() and handler_block() methods which do the actual
- * work of freezing and blocking.
- */
-static PyObject *
-pygcontext_manager_enter(PyObject *self)
-{
-	Py_INCREF(self);
-	return self;
-}
-
-typedef struct {
-    PyObject_HEAD
-    GObject *obj;
-} PyGContextFreezeNotify;
-
-PYGLIB_DEFINE_TYPE("gi._gobject.GContextFreezeNotify",
-		PyGContextFreezeNotify_Type, PyGContextFreezeNotify);
-
-static PyObject *
-pygcontext_freeze_notify_new(GObject *gobj)
-{
-	PyGContextFreezeNotify *context;
-
-	context = PyObject_New(PyGContextFreezeNotify, &PyGContextFreezeNotify_Type);
-	if (context == NULL)
-		return NULL;
-
-	g_object_ref(gobj);
-	context->obj = gobj;
-	return (PyObject*)context;
-}
-
-static void
-pygcontext_freeze_notify_dealloc(PyGContextFreezeNotify* self)
-{
-    g_object_unref(self->obj);
-    self->obj = NULL;
-    PyObject_Del((PyObject*)self);
-}
-
-static PyObject *
-pygcontext_freeze_notify_exit(PyGContextFreezeNotify *self, PyObject *args)
-{
-	g_object_thaw_notify(self->obj);
-	Py_RETURN_NONE;
-}
-
-static PyMethodDef pygcontext_freeze_notify_methods[] = {
-	{"__enter__", (PyCFunction)pygcontext_manager_enter, METH_NOARGS, ""},
-	{"__exit__", (PyCFunction)pygcontext_freeze_notify_exit, METH_VARARGS, ""},
-    {NULL}
-};
-
-/* -------------- Handler Block Context Manager ----------------- */
-typedef struct {
-    PyObject_HEAD
-    GObject *obj;
-    gulong handler_id;
-} PyGContextHandlerBlock;
-
-PYGLIB_DEFINE_TYPE("gi._gobject.GContextHandlerBlock",
-		PyGContextHandlerBlock_Type, PyGContextHandlerBlock);
-
-static PyObject *
-pygcontext_handler_block_new(GObject *gobj, gulong handler_id)
-{
-	PyGContextHandlerBlock *context;
-
-	context = PyObject_New(PyGContextHandlerBlock, &PyGContextHandlerBlock_Type);
-	if (context == NULL)
-		return NULL;
-
-	g_object_ref(gobj);
-	context->obj = gobj;
-	context->handler_id = handler_id;
-	return (PyObject*)context;
-}
-
-static void
-pygcontext_handler_block_dealloc(PyGContextHandlerBlock* self)
-{
-    g_object_unref(self->obj);
-    self->obj = NULL;
-    PyObject_Del((PyObject*)self);
-}
-
-static PyObject *
-pygcontext_handler_block_exit(PyGContextHandlerBlock *self, PyObject *args)
-{
-	g_signal_handler_unblock(self->obj, self->handler_id);
-	Py_RETURN_NONE;
-}
-
-
-static PyMethodDef pygcontext_handler_block_methods[] = {
-	{"__enter__", (PyCFunction)pygcontext_manager_enter, METH_NOARGS, ""},
-	{"__exit__", (PyCFunction)pygcontext_handler_block_exit, METH_VARARGS, ""},
-    {NULL}
-};
-
-
 /* -------------- PyGObject behaviour ----------------- */
 
 PYGLIB_DEFINE_TYPE("gi._gobject.GObject", PyGObject_Type, PyGObject);
@@ -1452,7 +1387,7 @@ pygobject_set_property(PyGObject *self, PyObject *args)
 	return NULL;
     }
     
-    if (!set_property_from_pspec(self->obj, param_name, pspec, pvalue))
+    if (!set_property_from_pspec(self->obj, pspec, pvalue))
 	return NULL;
     
     Py_INCREF(Py_None);
@@ -1490,7 +1425,7 @@ pygobject_set_properties(PyGObject *self, PyObject *args, PyObject *kwargs)
 	    goto exit;
 	}
 
-	if (!set_property_from_pspec(G_OBJECT(self->obj), key_str, pspec, value))
+	if (!set_property_from_pspec(G_OBJECT(self->obj), pspec, value))
 	    goto exit;
     }
 
@@ -1658,88 +1593,6 @@ pygobject_bind_property(PyGObject *self, PyObject *args)
 	}
 
 	return pygbinding_weak_ref_new(G_OBJECT (binding));
-}
-
-static PyObject *
-pygobject_freeze_notify(PyGObject *self, PyObject *args)
-{
-    if (!PyArg_ParseTuple(args, ":GObject.freeze_notify"))
-	return NULL;
-
-    CHECK_GOBJECT(self);
-
-    g_object_freeze_notify(self->obj);
-    return pygcontext_freeze_notify_new(self->obj);
-}
-
-static PyObject *
-pygobject_notify(PyGObject *self, PyObject *args)
-{
-    char *property_name;
-
-    if (!PyArg_ParseTuple(args, "s:GObject.notify", &property_name))
-	return NULL;
-
-    CHECK_GOBJECT(self);
-
-    g_object_notify(self->obj, property_name);
-    Py_INCREF(Py_None);
-    return Py_None;
-}
-
-static PyObject *
-pygobject_thaw_notify(PyGObject *self, PyObject *args)
-{
-    if (!PyArg_ParseTuple(args, ":GObject.thaw_notify"))
-	return NULL;
-    
-    CHECK_GOBJECT(self);
-    
-    g_object_thaw_notify(self->obj);
-    Py_INCREF(Py_None);
-    return Py_None;
-}
-
-static PyObject *
-pygobject_get_data(PyGObject *self, PyObject *args)
-{
-    char *key;
-    GQuark quark;
-    PyObject *data;
-
-    g_warning("GObject.get_data() and set_data() are deprecated. Use normal Python attributes instead");
-
-    if (!PyArg_ParseTuple(args, "s:GObject.get_data", &key))
-	return NULL;
-    
-    CHECK_GOBJECT(self);
-    
-    quark = g_quark_from_string(key);
-    data = g_object_get_qdata(self->obj, quark);
-    if (!data) data = Py_None;
-    Py_INCREF(data);
-    return data;
-}
-
-static PyObject *
-pygobject_set_data(PyGObject *self, PyObject *args)
-{
-    char *key;
-    GQuark quark;
-    PyObject *data;
-
-    g_warning("GObject.get_data() and set_data() are deprecated. Use normal Python attributes instead");
-
-    if (!PyArg_ParseTuple(args, "sO:GObject.set_data", &key, &data))
-	return NULL;
-    
-    CHECK_GOBJECT(self);
-    
-    quark = g_quark_from_string(key);
-    Py_INCREF(data);
-    g_object_set_qdata_full(self->obj, quark, data, pyg_destroy_notify);
-    Py_INCREF(Py_None);
-    return Py_None;
 }
 
 static PyObject *
@@ -1996,11 +1849,12 @@ pygobject_handler_block(PyGObject *self, PyObject *args)
 
     if (!PyArg_ParseTuple(args, "k:GObject.handler_block", &handler_id))
 	return NULL;
-    
+
     CHECK_GOBJECT(self);
-    
+
     g_signal_handler_block(self->obj, handler_id);
-    return pygcontext_handler_block_new(self->obj, handler_id);
+    Py_INCREF(Py_None);
+    return Py_None;
 }
 
 static PyObject *
@@ -2361,11 +2215,6 @@ static PyMethodDef pygobject_methods[] = {
     { "set_property", (PyCFunction)pygobject_set_property, METH_VARARGS },
     { "set_properties", (PyCFunction)pygobject_set_properties, METH_VARARGS|METH_KEYWORDS },
     { "bind_property", (PyCFunction)pygobject_bind_property, METH_VARARGS|METH_KEYWORDS },
-    { "freeze_notify", (PyCFunction)pygobject_freeze_notify, METH_VARARGS },
-    { "notify", (PyCFunction)pygobject_notify, METH_VARARGS },
-    { "thaw_notify", (PyCFunction)pygobject_thaw_notify, METH_VARARGS },
-    { "get_data", (PyCFunction)pygobject_get_data, METH_VARARGS },
-    { "set_data", (PyCFunction)pygobject_set_data, METH_VARARGS },
     { "connect", (PyCFunction)pygobject_connect, METH_VARARGS },
     { "connect_after", (PyCFunction)pygobject_connect_after, METH_VARARGS },
     { "connect_object", (PyCFunction)pygobject_connect_object, METH_VARARGS },
@@ -2722,18 +2571,4 @@ pygobject_object_register_types(PyObject *d)
     if (PyType_Ready(&PyGBindingWeakRef_Type) < 0)
         return;
     PyDict_SetItemString(d, "GBindingWeakRef", (PyObject *) &PyGBindingWeakRef_Type);
-
-    PyGContextFreezeNotify_Type.tp_dealloc = (destructor)pygcontext_freeze_notify_dealloc;
-    PyGContextFreezeNotify_Type.tp_flags = Py_TPFLAGS_DEFAULT;
-    PyGContextFreezeNotify_Type.tp_doc = "Context manager for freeze/thaw of GObjects";
-    PyGContextFreezeNotify_Type.tp_methods = pygcontext_freeze_notify_methods;
-    if (PyType_Ready(&PyGContextFreezeNotify_Type) < 0)
-        return;
-
-    PyGContextHandlerBlock_Type.tp_dealloc = (destructor)pygcontext_handler_block_dealloc;
-    PyGContextHandlerBlock_Type.tp_flags = Py_TPFLAGS_DEFAULT;
-    PyGContextHandlerBlock_Type.tp_doc = "Context manager for handler blocking of GObjects";
-    PyGContextHandlerBlock_Type.tp_methods = pygcontext_handler_block_methods;
-    if (PyType_Ready(&PyGContextHandlerBlock_Type) < 0)
-        return;
 }

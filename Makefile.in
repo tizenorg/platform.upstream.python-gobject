@@ -188,6 +188,9 @@ CAIRO_LIBS = @CAIRO_LIBS@
 CC = @CC@
 CCDEPMODE = @CCDEPMODE@
 CFLAGS = @CFLAGS@
+CODE_COVERAGE_CFLAGS = @CODE_COVERAGE_CFLAGS@
+CODE_COVERAGE_ENABLED = @CODE_COVERAGE_ENABLED@
+CODE_COVERAGE_LDFLAGS = @CODE_COVERAGE_LDFLAGS@
 CPP = @CPP@
 CPPFLAGS = @CPPFLAGS@
 CYGPATH_W = @CYGPATH_W@
@@ -205,6 +208,7 @@ EXEEXT = @EXEEXT@
 FFI_CFLAGS = @FFI_CFLAGS@
 FFI_LIBS = @FFI_LIBS@
 FGREP = @FGREP@
+GENHTML = @GENHTML@
 GIO_CFLAGS = @GIO_CFLAGS@
 GIO_LIBS = @GIO_LIBS@
 GI_CFLAGS = @GI_CFLAGS@
@@ -224,6 +228,7 @@ INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_STRIP_PROGRAM = @INSTALL_STRIP_PROGRAM@
 INTROSPECTION_COMPILER = @INTROSPECTION_COMPILER@
 INTROSPECTION_SCANNER = @INTROSPECTION_SCANNER@
+LCOV = @LCOV@
 LD = @LD@
 LDFLAGS = @LDFLAGS@
 LIBFFI_PC = @LIBFFI_PC@
@@ -233,7 +238,6 @@ LIBTOOL = @LIBTOOL@
 LIPO = @LIPO@
 LN_S = @LN_S@
 LTLIBOBJS = @LTLIBOBJS@
-MAINT = @MAINT@
 MAKEINFO = @MAKEINFO@
 MANIFEST_TOOL = @MANIFEST_TOOL@
 MKDIR_P = @MKDIR_P@
@@ -333,16 +337,16 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 AUTOMAKE_OPTIONS = 1.7
-SUBDIRS = examples gi tests
+SUBDIRS = examples gi tests pygtkcompat
 PLATFORM_VERSION = 3.0
 CLEANFILES = \
 	`find "$(builddir)" -type f -name "*.pyc" -print`
 
 EXTRA_DIST = \
-	ChangeLog.pre-2.18 \
 	pygobject-$(PLATFORM_VERSION).pc.in \
 	PKG-INFO \
 	PKG-INFO.in \
+	pygi-convert.sh \
 	m4/as-ac-expand.m4 \
 	m4/jhflags.m4 \
 	m4/python.m4
@@ -384,14 +388,16 @@ pkgconfig_DATA = pygobject-$(PLATFORM_VERSION).pc
 
 # python
 pyexec_LTLIBRARIES = 
-EGG_NAME = $(PACKAGE)-$(PACKAGE_VERSION)-py$(PYTHON_VERSION)-$(PLATFORM).egg
+
+# install pth file.
+EGG_NAME = $(PACKAGE)-$(PACKAGE_VERSION)-py$(PYTHON_VERSION)-$(PLATFORM)
 all: config.h
 	$(MAKE) $(AM_MAKEFLAGS) all-recursive
 
 .SUFFIXES:
 am--refresh: Makefile
 	@:
-$(srcdir)/Makefile.in: @MAINTAINER_MODE_TRUE@ $(srcdir)/Makefile.am  $(am__configure_deps)
+$(srcdir)/Makefile.in:  $(srcdir)/Makefile.am  $(am__configure_deps)
 	@for dep in $?; do \
 	  case '$(am__configure_deps)' in \
 	    *$$dep*) \
@@ -418,9 +424,9 @@ Makefile: $(srcdir)/Makefile.in $(top_builddir)/config.status
 $(top_builddir)/config.status: $(top_srcdir)/configure $(CONFIG_STATUS_DEPENDENCIES)
 	$(SHELL) ./config.status --recheck
 
-$(top_srcdir)/configure: @MAINTAINER_MODE_TRUE@ $(am__configure_deps)
+$(top_srcdir)/configure:  $(am__configure_deps)
 	$(am__cd) $(srcdir) && $(AUTOCONF)
-$(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
+$(ACLOCAL_M4):  $(am__aclocal_m4_deps)
 	$(am__cd) $(srcdir) && $(ACLOCAL) $(ACLOCAL_AMFLAGS)
 $(am__aclocal_m4_deps):
 
@@ -431,7 +437,7 @@ config.h: stamp-h1
 stamp-h1: $(srcdir)/config.h.in $(top_builddir)/config.status
 	@rm -f stamp-h1
 	cd $(top_builddir) && $(SHELL) ./config.status config.h
-$(srcdir)/config.h.in: @MAINTAINER_MODE_TRUE@ $(am__configure_deps) 
+$(srcdir)/config.h.in:  $(am__configure_deps) 
 	($(am__cd) $(top_srcdir) && $(AUTOHEADER))
 	rm -f stamp-h1
 	touch $@
@@ -967,17 +973,18 @@ uninstall-am: uninstall-local uninstall-pkgconfigDATA \
 	uninstall-pkgconfigDATA uninstall-pyexecLTLIBRARIES
 
 
-# install pth file.
 install-data-local:
-	$(mkinstalldirs) $(DESTDIR)$(pythondir)
+	$(mkinstalldirs) $(DESTDIR)$(pyexecdir)
+	cp $(top_builddir)/PKG-INFO $(DESTDIR)$(pyexecdir)/$(EGG_NAME).egg-info
 install-exec-local:
 	$(mkinstalldirs) $(DESTDIR)$(pyexecdir)
 uninstall-local:
+	rm -f $(DESTDIR)$(pyexecdir)/$(EGG_NAME).egg-info
 
 egg: EGG_TMPDIR:=$(TMPDIR)/$(PACKAGE)-$(PACKAGE_VERSION)
 egg: $(top_srcdir)/gobject/gobject.la PKG-INFO
 	rm -fr $(EGG_TMPDIR)
-	echo $(EGG_NAME)
+	echo $(EGG_NAME).egg
 	$(MKDIR_P) $(EGG_TMPDIR)
 	$(MKDIR_P) $(EGG_TMPDIR)/EGG-INFO
 	$(MAKE) -C gobject install-pkgpyexecLTLIBRARIES pkgpyexecdir=$(EGG_TMPDIR)
@@ -985,8 +992,8 @@ egg: $(top_srcdir)/gobject/gobject.la PKG-INFO
 	$(INSTALL) PKG-INFO $(EGG_TMPDIR)/EGG-INFO
 	echo "gobject.so" >> $(EGG_TMPDIR)/EGG-INFO/native_libs.txt
 	( echo "gobject" ) >> $(EGG_TMPDIR)/EGG-INFO/top_level.txt
-	cd $(EGG_TMPDIR) && zip -rq $(EGG_NAME) .
-	mv $(EGG_TMPDIR)/$(EGG_NAME) .
+	cd $(EGG_TMPDIR) && zip -rq $(EGG_NAME).egg .
+	mv $(EGG_TMPDIR)/$(EGG_NAME).egg .
 	rm -fr $(EGG_TMPDIR)
 
 doc-dist:
@@ -1052,6 +1059,8 @@ check.nemiver:
 
 check.valgrind:
 	cd tests && $(MAKE) check.valgrind
+
+@GNOME_CODE_COVERAGE_RULES@
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

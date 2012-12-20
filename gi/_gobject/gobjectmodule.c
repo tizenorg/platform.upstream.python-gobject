@@ -141,28 +141,6 @@ pyg_type_from_name (PyObject *self, PyObject *args)
 }
 
 static PyObject *
-pyg_type_parent (PyObject *self, PyObject *args)
-{
-    PyObject *gtype;
-    GType type, parent;
-#if 0
-    if (PyErr_Warn(PyExc_DeprecationWarning,
-		   "gobject.type_parent is deprecated; "
-		   "use GType.parent instead"))
-        return NULL;
-#endif
-    if (!PyArg_ParseTuple(args, "O:gobject.type_parent", &gtype))
-	return NULL;
-    if ((type = pyg_type_from_object(gtype)) == 0)
-	return NULL;
-    parent = g_type_parent(type);
-    if (parent != 0)
-	return pyg_type_wrapper_new(parent);
-    PyErr_SetString(PyExc_RuntimeError, "no parent for type");
-    return NULL;
-}
-
-static PyObject *
 pyg_type_is_a (PyObject *self, PyObject *args)
 {
     PyObject *gtype, *gparent;
@@ -180,68 +158,6 @@ pyg_type_is_a (PyObject *self, PyObject *args)
     if ((parent = pyg_type_from_object(gparent)) == 0)
 	return NULL;
     return PyBool_FromLong(g_type_is_a(type, parent));
-}
-
-static PyObject *
-pyg_type_children (PyObject *self, PyObject *args)
-{
-    PyObject *gtype, *list;
-    GType type, *children;
-    guint n_children, i;
-#if 0
-    if (PyErr_Warn(PyExc_DeprecationWarning,
-		   "gobject.type_children is deprecated; "
-		   "use GType.children instead"))
-        return NULL;
-#endif
-    if (!PyArg_ParseTuple(args, "O:gobject.type_children", &gtype))
-	return NULL;
-    if ((type = pyg_type_from_object(gtype)) == 0)
-	return NULL;
-    children = g_type_children(type, &n_children);
-    if (children) {
-        list = PyList_New(0);
-	for (i = 0; i < n_children; i++) {
-	    PyObject *o;
-	    PyList_Append(list, o=pyg_type_wrapper_new(children[i]));
-	    Py_DECREF(o);
-	}
-	g_free(children);
-	return list;
-    }
-    PyErr_SetString(PyExc_RuntimeError, "invalid type, or no children");
-    return NULL;
-}
-
-static PyObject *
-pyg_type_interfaces (PyObject *self, PyObject *args)
-{
-    PyObject *gtype, *list;
-    GType type, *interfaces;
-    guint n_interfaces, i;
-#if 0
-    if (PyErr_Warn(PyExc_DeprecationWarning,
-		   "gobject.type_interfaces is deprecated; "
-		   "use GType.interfaces instead"))
-        return NULL;
-#endif
-    if (!PyArg_ParseTuple(args, "O:gobject.type_interfaces", &gtype))
-	return NULL;
-    if ((type = pyg_type_from_object(gtype)) == 0)
-	return NULL;
-    interfaces = g_type_interfaces(type, &n_interfaces);
-    if (interfaces) {
-        list = PyList_New(0);
-	for (i = 0; i < n_interfaces; i++) {
-	    PyObject *o;
-	    PyList_Append(list, o=pyg_type_wrapper_new(interfaces[i]));
-	    Py_DECREF(o);
-	}
-	g_free(interfaces);
-	return list;
-    }
-    PyErr_SetString(PyExc_RuntimeError, "invalid type, or no interfaces");
-    return NULL;
 }
 
 static void
@@ -307,13 +223,6 @@ pyg_object_get_property (GObject *object, guint property_id,
     Py_XDECREF(retval);
 
     pyglib_gil_state_release(state);
-}
-
-static void
-pyg_object_class_init(GObjectClass *class, PyObject *py_class)
-{
-    class->set_property = pyg_object_set_property;
-    class->get_property = pyg_object_get_property;
 }
 
 typedef struct _PyGSignalAccumulatorData {
@@ -481,15 +390,14 @@ override_signal(GType instance_type, const gchar *signal_name)
 }
 
 static PyObject *
-add_signals (GType instance_type, PyObject *signals)
+add_signals (GObjectClass *klass, PyObject *signals)
 {
     gboolean ret = TRUE;
-    GObjectClass *oclass;
     Py_ssize_t pos = 0;
     PyObject *key, *value, *overridden_signals = NULL;
+    GType instance_type = G_OBJECT_CLASS_TYPE (klass);
 
     overridden_signals = PyDict_New();
-    oclass = g_type_class_ref(instance_type);
     while (PyDict_Next(signals, &pos, &key, &value)) {
 	const gchar *signal_name;
         gchar *signal_name_canon, *c;
@@ -527,7 +435,6 @@ add_signals (GType instance_type, PyObject *signals)
 	if (!ret)
 	    break;
     }
-    g_type_class_unref(oclass);
     if (ret)
         return overridden_signals;
     else {
@@ -732,6 +639,18 @@ create_property (const gchar  *prop_name,
 	    return NULL;
 	pspec = g_param_spec_object (prop_name, nick, blurb, prop_type, flags);
 	break;
+    case G_TYPE_VARIANT:
+	{
+	    PyObject *pydefault;
+            GVariant *default_value = NULL;
+
+	    if (!PyArg_ParseTuple(args, "O", &pydefault))
+		return NULL;
+            if (pydefault != Py_None)
+                default_value = pyg_boxed_get (pydefault, GVariant);
+	    pspec = g_param_spec_variant (prop_name, nick, blurb, G_VARIANT_TYPE_ANY, default_value, flags);
+	}
+	break;
     default:
 	/* unhandled pspec type ... */
 	break;
@@ -800,14 +719,12 @@ pyg_param_spec_from_object (PyObject *tuple)
 }
 
 static gboolean
-add_properties (GType instance_type, PyObject *properties)
+add_properties (GObjectClass *klass, PyObject *properties)
 {
     gboolean ret = TRUE;
-    GObjectClass *oclass;
     Py_ssize_t pos = 0;
     PyObject *key, *value;
 
-    oclass = g_type_class_ref(instance_type);
     while (PyDict_Next(properties, &pos, &key, &value)) {
 	const gchar *prop_name;
 	GType prop_type;
@@ -873,7 +790,7 @@ add_properties (GType instance_type, PyObject *properties)
 	Py_DECREF(slice);
 
 	if (pspec) {
-	    g_object_class_install_property(oclass, 1, pspec);
+	    g_object_class_install_property(klass, 1, pspec);
 	} else {
             PyObject *type, *value, *traceback;
 	    ret = FALSE;
@@ -883,7 +800,7 @@ add_properties (GType instance_type, PyObject *properties)
                 g_snprintf(msg, 256,
 			   "%s (while registering property '%s' for GType '%s')",
                PYGLIB_PyUnicode_AsString(value),
-			   prop_name, g_type_name(instance_type));
+			   prop_name, G_OBJECT_CLASS_NAME(klass));
                 Py_DECREF(value);
                 value = PYGLIB_PyUnicode_FromString(msg);
             }
@@ -892,8 +809,60 @@ add_properties (GType instance_type, PyObject *properties)
 	}
     }
 
-    g_type_class_unref(oclass);
     return ret;
+}
+
+static void
+pyg_object_class_init(GObjectClass *class, PyObject *py_class)
+{
+    PyObject *gproperties, *gsignals, *overridden_signals;
+    PyObject *class_dict = ((PyTypeObject*) py_class)->tp_dict;
+
+    class->set_property = pyg_object_set_property;
+    class->get_property = pyg_object_get_property;
+
+    /* install signals */
+    /* we look this up in the instance dictionary, so we don't
+     * accidentally get a parent type's __gsignals__ attribute. */
+    gsignals = PyDict_GetItemString(class_dict, "__gsignals__");
+    if (gsignals) {
+	if (!PyDict_Check(gsignals)) {
+	    PyErr_SetString(PyExc_TypeError,
+			    "__gsignals__ attribute not a dict!");
+	    return;
+	}
+	if (!(overridden_signals = add_signals(class, gsignals))) {
+	    return;
+	}
+        if (PyDict_SetItemString(class_dict, "__gsignals__",
+				 overridden_signals)) {
+            return;
+        }
+        Py_DECREF(overridden_signals);
+
+        PyDict_DelItemString(class_dict, "__gsignals__");
+    } else {
+	PyErr_Clear();
+    }
+
+    /* install properties */
+    /* we look this up in the instance dictionary, so we don't
+     * accidentally get a parent type's __gproperties__ attribute. */
+    gproperties = PyDict_GetItemString(class_dict, "__gproperties__");
+    if (gproperties) {
+	if (!PyDict_Check(gproperties)) {
+	    PyErr_SetString(PyExc_TypeError,
+			    "__gproperties__ attribute not a dict!");
+	    return;
+	}
+	if (!add_properties(class, gproperties)) {
+	    return;
+	}
+	PyDict_DelItemString(class_dict, "__gproperties__");
+	/* Borrowed reference. Py_DECREF(gproperties); */
+    } else {
+	PyErr_Clear();
+    }
 }
 
 static void
@@ -1095,7 +1064,7 @@ pygobject__g_instance_init(GTypeInstance   *instance,
  */
 static void
 pyg_type_add_interfaces(PyTypeObject *class, GType instance_type,
-                        PyObject *bases, gboolean new_interfaces,
+                        PyObject *bases,
                         GType *parent_interfaces, guint n_parent_interfaces)
 {
     int i;
@@ -1106,10 +1075,8 @@ pyg_type_add_interfaces(PyTypeObject *class, GType instance_type,
     }
 
     for (i = 0; i < PyTuple_GET_SIZE(bases); ++i) {
-        guint k;
         PyObject *base = PyTuple_GET_ITEM(bases, i);
         GType itype;
-        gboolean is_new = TRUE;
         const GInterfaceInfo *iinfo;
         GInterfaceInfo iinfo_copy;
 
@@ -1124,16 +1091,6 @@ pyg_type_add_interfaces(PyTypeObject *class, GType instance_type,
 
         /* Happens for _implementations_ of an interface. */
         if (!G_TYPE_IS_INTERFACE(itype))
-            continue;
-
-        for (k = 0; k < n_parent_interfaces; ++k) {
-            if (parent_interfaces[k] == itype) {
-                is_new = FALSE;
-                break;
-            }
-        }
-
-        if ((new_interfaces && !is_new) || (!new_interfaces && is_new))
             continue;
 
         iinfo = pyg_lookup_interface_info(itype);
@@ -1156,7 +1113,7 @@ pyg_type_add_interfaces(PyTypeObject *class, GType instance_type,
 int
 pyg_type_register(PyTypeObject *class, const char *type_name)
 {
-    PyObject *gtype, *gsignals, *gproperties, *overridden_signals;
+    PyObject *gtype;
     GType parent_type, instance_type;
     GType *parent_interfaces;
     guint n_parent_interfaces;
@@ -1234,88 +1191,22 @@ pyg_type_register(PyTypeObject *class, const char *type_name)
     }
 
     /*
-     * Note: Interfaces to be implemented are searched twice.  First
-     * we register interfaces that are already implemented by a parent
-     * type.  The second time, the remaining interfaces are
-     * registered, i.e. the ones that are not implemented by a parent
-     * type.  In between these two loops, properties and signals are
-     * registered.  It has to be done this way, in two steps,
-     * otherwise glib will complain.  If registering all interfaces
-     * always before properties, you get an error like:
-     *
-     *    ../gobject:121: Warning: Object class
-     *    test_interface+MyObject doesn't implement property
-     *    'some-property' from interface 'TestInterface'
-     *
-     * If, on the other hand, you register interfaces after
-     * registering the properties, you get something like:
-     *
-     *     ../gobject:121: Warning: cannot add interface type
-     *    `TestInterface' to type `test_interface+MyUnknown', since
-     *    type `test_interface+MyUnknown' already conforms to
-     *    interface
-     *
-     * This looks like a GLib quirk, but no bug has been filed
-     * upstream.  However we have a unit test for this particular
-     * problem, which can be found in test_interfaces.py, class
-     * TestInterfaceImpl.
+     * Note, all interfaces need to be registered before the first
+     * g_type_class_ref(), see bug #686149.
      *
      * See also comment above pyg_type_add_interfaces().
      */
-    pyg_type_add_interfaces(class, instance_type, class->tp_bases, FALSE,
+    pyg_type_add_interfaces(class, instance_type, class->tp_bases,
                             parent_interfaces, n_parent_interfaces);
 
-    /* we look this up in the instance dictionary, so we don't
-     * accidentally get a parent type's __gsignals__ attribute. */
-    gsignals = PyDict_GetItemString(class->tp_dict, "__gsignals__");
-    if (gsignals) {
-	if (!PyDict_Check(gsignals)) {
-	    PyErr_SetString(PyExc_TypeError,
-			    "__gsignals__ attribute not a dict!");
-            g_free(parent_interfaces);
-	    return -1;
-	}
-	if (!(overridden_signals = add_signals(instance_type, gsignals))) {
-            g_free(parent_interfaces);
-	    return -1;
-	}
-        if (PyDict_SetItemString(class->tp_dict, "__gsignals__",
-				 overridden_signals)) {
-            g_free(parent_interfaces);
-            return -1;
-        }
-        Py_DECREF(overridden_signals);
-    } else {
-	PyErr_Clear();
-    }
-
-    /* we look this up in the instance dictionary, so we don't
-     * accidentally get a parent type's __gsignals__ attribute. */
-    gproperties = PyDict_GetItemString(class->tp_dict, "__gproperties__");
-    if (gproperties) {
-	if (!PyDict_Check(gproperties)) {
-	    PyErr_SetString(PyExc_TypeError,
-			    "__gproperties__ attribute not a dict!");
-            g_free(parent_interfaces);
-	    return -1;
-	}
-	if (!add_properties(instance_type, gproperties)) {
-            g_free(parent_interfaces);
-	    return -1;
-	}
-	PyDict_DelItemString(class->tp_dict, "__gproperties__");
-	/* Borrowed reference. Py_DECREF(gproperties); */
-    } else {
-	PyErr_Clear();
-    }
-
-    /* Register new interfaces, that are _not_ already defined by
-     * the parent type.  FIXME: See above.
-     */
-    pyg_type_add_interfaces(class, instance_type, class->tp_bases, TRUE,
-                            parent_interfaces, n_parent_interfaces);
 
     gclass = g_type_class_ref(instance_type);
+    if (PyErr_Occurred() != NULL) {
+        g_type_class_unref(gclass);
+        g_free(parent_interfaces);
+        return -1;
+    }
+
     if (pyg_run_class_init(instance_type, gclass, class)) {
         g_type_class_unref(gclass);
         g_free(parent_interfaces);
@@ -1324,9 +1215,8 @@ pyg_type_register(PyTypeObject *class, const char *type_name)
     g_type_class_unref(gclass);
     g_free(parent_interfaces);
 
-    if (gsignals)
-        PyDict_DelItemString(class->tp_dict, "__gsignals__");
-
+    if (PyErr_Occurred() != NULL)
+        return -1;
     return 0;
 }
 
@@ -1395,171 +1285,6 @@ pyg_signal_new(PyObject *self, PyObject *args)
 	return PYGLIB_PyLong_FromLong(signal_id);
     PyErr_SetString(PyExc_RuntimeError, "could not create signal");
     return NULL;
-}
-
-static PyObject *
-pyg_signal_list_names (PyObject *self, PyObject *args, PyObject *kwargs)
-{
-    static char *kwlist[] = { "type", NULL };
-    PyObject *py_itype, *list;
-    GObjectClass *class = NULL;
-    GType itype;
-    guint n;
-    guint *ids;
-    guint i;
-    gpointer iface = NULL;
-
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs,
-                                     "O:gobject.signal_list_names",
-                                     kwlist, &py_itype))
-	return NULL;
-    if ((itype = pyg_type_from_object(py_itype)) == 0)
-	return NULL;
-
-    if (G_TYPE_IS_INSTANTIATABLE(itype)) {
-	class = g_type_class_ref(itype);
-	if (!class) {
-	    PyErr_SetString(PyExc_RuntimeError,
-			    "could not get a reference to type class");
-	    return NULL;
-	}
-    } else if (!G_TYPE_IS_INTERFACE(itype)) {
-	PyErr_SetString(PyExc_TypeError,
-			"type must be instantiable or an interface");
-	return NULL;
-    } else {
-        iface = g_type_default_interface_ref(itype);
-    }
-
-    ids = g_signal_list_ids(itype, &n);
-
-    list = PyTuple_New((gint)n);
-    if (list != NULL) {
-	for (i = 0; i < n; i++)
-	    PyTuple_SetItem(list, i,
-	    		PYGLIB_PyUnicode_FromString(g_signal_name(ids[i])));
-    }
-
-    g_free(ids);
-    if (class)
-        g_type_class_unref(class);
-    else
-       g_type_default_interface_unref(iface);
-
-    return list;
-}
-
-static PyObject *
-pyg_signal_list_ids (PyObject *self, PyObject *args, PyObject *kwargs)
-{
-    static char *kwlist[] = { "type", NULL };
-    PyObject *py_itype, *list;
-    GObjectClass *class = NULL;
-    GType itype;
-    guint n;
-    guint *ids;
-    guint i;
-    gpointer iface = NULL;
-
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs,
-                                     "O:gobject.signal_list_ids",
-                                     kwlist, &py_itype))
-	return NULL;
-    if ((itype = pyg_type_from_object(py_itype)) == 0)
-	return NULL;
-
-    if (G_TYPE_IS_INSTANTIATABLE(itype)) {
-	class = g_type_class_ref(itype);
-	if (!class) {
-	    PyErr_SetString(PyExc_RuntimeError,
-			    "could not get a reference to type class");
-	    return NULL;
-	}
-    } else if (!G_TYPE_IS_INTERFACE(itype)) {
-	PyErr_SetString(PyExc_TypeError,
-			"type must be instantiable or an interface");
-	return NULL;
-    } else {
-        iface = g_type_default_interface_ref(itype);
-    }
-
-    ids = g_signal_list_ids(itype, &n);
-
-    list = PyTuple_New((gint)n);
-    if (list == NULL) {
-	g_free(ids);
-	g_type_class_unref(class);
-	return NULL;
-    }
-
-    for (i = 0; i < n; i++)
-	PyTuple_SetItem(list, i, PYGLIB_PyLong_FromLong(ids[i]));
-    g_free(ids);
-    if (class)
-        g_type_class_unref(class);
-    else
-       g_type_default_interface_unref(iface);
-
-    return list;
-}
-
-static PyObject *
-pyg_signal_lookup (PyObject *self, PyObject *args, PyObject *kwargs)
-{
-    static char *kwlist[] = { "name", "type", NULL };
-    PyObject *py_itype;
-    GObjectClass *class = NULL;
-    GType itype;
-    gchar *signal_name;
-    guint id;
-    gpointer iface = NULL;
-
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "sO:gobject.signal_lookup",
-                                     kwlist, &signal_name, &py_itype))
-	return NULL;
-    if ((itype = pyg_type_from_object(py_itype)) == 0)
-	return NULL;
-
-    if (G_TYPE_IS_INSTANTIATABLE(itype)) {
-	class = g_type_class_ref(itype);
-	if (!class) {
-	    PyErr_SetString(PyExc_RuntimeError,
-			    "could not get a reference to type class");
-	    return NULL;
-	}
-    } else if (!G_TYPE_IS_INTERFACE(itype)) {
-	PyErr_SetString(PyExc_TypeError,
-			"type must be instantiable or an interface");
-	return NULL;
-    } else {
-        iface = g_type_default_interface_ref(itype);
-    }
-
-    id = g_signal_lookup(signal_name, itype);
-
-    if (class)
-        g_type_class_unref(class);
-    else
-       g_type_default_interface_unref(iface);
-    return PYGLIB_PyLong_FromLong(id);
-}
-
-static PyObject *
-pyg_signal_name (PyObject *self, PyObject *args, PyObject *kwargs)
-{
-    static char *kwlist[] = { "signal_id", NULL };
-    const gchar *signal_name;
-    guint id;
-
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "i:gobject.signal_name",
-                                     kwlist, &id))
-	return NULL;
-    signal_name = g_signal_name(id);
-    if (signal_name)
-        return PYGLIB_PyUnicode_FromString(signal_name);
-
-    Py_INCREF(Py_None);
-    return Py_None;
 }
 
 static PyObject *
@@ -1987,20 +1712,9 @@ pyg__install_metaclass(PyObject *dummy, PyTypeObject *metaclass)
 static PyMethodDef _gobject_functions[] = {
     { "type_name", pyg_type_name, METH_VARARGS },
     { "type_from_name", pyg_type_from_name, METH_VARARGS },
-    { "type_parent", pyg_type_parent, METH_VARARGS },
     { "type_is_a", pyg_type_is_a, METH_VARARGS },
-    { "type_children", pyg_type_children, METH_VARARGS },
-    { "type_interfaces", pyg_type_interfaces, METH_VARARGS },
     { "type_register", _wrap_pyg_type_register, METH_VARARGS },
     { "signal_new", pyg_signal_new, METH_VARARGS },
-    { "signal_list_names",
-      (PyCFunction)pyg_signal_list_names, METH_VARARGS|METH_KEYWORDS },
-    { "signal_list_ids",
-      (PyCFunction)pyg_signal_list_ids, METH_VARARGS|METH_KEYWORDS },
-    { "signal_lookup",
-      (PyCFunction)pyg_signal_lookup, METH_VARARGS|METH_KEYWORDS },
-    { "signal_name",
-      (PyCFunction)pyg_signal_name, METH_VARARGS|METH_KEYWORDS },
     { "signal_query",
       (PyCFunction)pyg_signal_query, METH_VARARGS|METH_KEYWORDS },
     { "list_properties",
@@ -2431,44 +2145,17 @@ pygobject_register_constants(PyObject *m)
     PyModule_AddIntConstant(m,  "G_MAXUSHORT", G_MAXUSHORT);
     PyModule_AddIntConstant(m,  "G_MININT", G_MININT);
     PyModule_AddIntConstant(m,  "G_MAXINT", G_MAXINT);
+    PyModule_AddObject(m,       "G_MAXUINT", PyLong_FromUnsignedLong(G_MAXUINT));
     PyModule_AddObject(m,       "G_MINLONG", PyLong_FromLong(G_MINLONG));
     PyModule_AddObject(m,       "G_MAXLONG", PyLong_FromLong(G_MAXLONG));
     PyModule_AddObject(m,       "G_MAXULONG", PyLong_FromUnsignedLong(G_MAXULONG));
-    PyModule_AddIntConstant(m,  "G_MININT8", G_MININT8);
-    PyModule_AddIntConstant(m,  "G_MAXINT8", G_MAXINT8);
-    PyModule_AddIntConstant(m,  "G_MAXUINT8", G_MAXUINT8);
-    PyModule_AddIntConstant(m,  "G_MININT16", G_MININT16);
-    PyModule_AddIntConstant(m,  "G_MAXINT16", G_MAXINT16);
-    PyModule_AddIntConstant(m,  "G_MAXUINT16", G_MAXUINT16);
-    PyModule_AddIntConstant(m,  "G_MININT32", G_MININT32);
-    PyModule_AddIntConstant(m,  "G_MAXINT32", G_MAXINT32);
-    PyModule_AddObject(m,       "G_MININT64", PyLong_FromLongLong(G_MININT64));
-    PyModule_AddObject(m,       "G_MAXINT64", PyLong_FromLongLong(G_MAXINT64));
-    PyModule_AddObject(m,       "G_MAXUINT64", PyLong_FromUnsignedLongLong(G_MAXUINT64));
     PyModule_AddObject(m,       "G_MAXSIZE", PyLong_FromSize_t(G_MAXSIZE));
     PyModule_AddObject(m,       "G_MAXSSIZE", PyLong_FromSsize_t(G_MAXSSIZE));
+    PyModule_AddObject(m,       "G_MINSSIZE", PyLong_FromSsize_t(G_MINSSIZE));
     PyModule_AddObject(m,       "G_MINOFFSET", PyLong_FromLongLong(G_MINOFFSET));
     PyModule_AddObject(m,       "G_MAXOFFSET", PyLong_FromLongLong(G_MAXOFFSET));
 
-    /* in order for test_properties to pass, G_MAXUINT must be initialized using
-       PyLong_FromUnsignedLong, despite AFAICT it is unecessary for 32bit int types.
-       In the interests of consistancy I did the same for MAXUINT32 */
-    PyModule_AddObject(m,       "G_MAXUINT32", PyLong_FromUnsignedLong(G_MAXUINT32));
-    PyModule_AddObject(m,       "G_MAXUINT", PyLong_FromUnsignedLong(G_MAXUINT));
-
     PyModule_AddIntConstant(m, "SIGNAL_RUN_FIRST", G_SIGNAL_RUN_FIRST);
-    PyModule_AddIntConstant(m, "SIGNAL_RUN_LAST", G_SIGNAL_RUN_LAST);
-    PyModule_AddIntConstant(m, "SIGNAL_RUN_CLEANUP", G_SIGNAL_RUN_CLEANUP);
-    PyModule_AddIntConstant(m, "SIGNAL_NO_RECURSE", G_SIGNAL_NO_RECURSE);
-    PyModule_AddIntConstant(m, "SIGNAL_DETAILED", G_SIGNAL_DETAILED);
-    PyModule_AddIntConstant(m, "SIGNAL_ACTION", G_SIGNAL_ACTION);
-    PyModule_AddIntConstant(m, "SIGNAL_NO_HOOKS", G_SIGNAL_NO_HOOKS);
-
-    PyModule_AddIntConstant(m, "PARAM_READABLE", G_PARAM_READABLE);
-    PyModule_AddIntConstant(m, "PARAM_WRITABLE", G_PARAM_WRITABLE);
-    PyModule_AddIntConstant(m, "PARAM_CONSTRUCT", G_PARAM_CONSTRUCT);
-    PyModule_AddIntConstant(m, "PARAM_CONSTRUCT_ONLY", G_PARAM_CONSTRUCT_ONLY);
-    PyModule_AddIntConstant(m, "PARAM_LAX_VALIDATION", G_PARAM_LAX_VALIDATION);
     PyModule_AddIntConstant(m, "PARAM_READWRITE", G_PARAM_READWRITE);
 
     /* The rest of the types are set in __init__.py */

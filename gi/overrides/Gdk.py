@@ -20,11 +20,11 @@
 # USA
 
 from ..overrides import override
-from ..importer import modules
+from ..module import get_introspection_module
 
 import sys
 
-Gdk = modules['Gdk']._introspection_module
+Gdk = get_introspection_module('Gdk')
 
 __all__ = []
 
@@ -287,7 +287,7 @@ for event_class in event_member_classes:
 
 class DragContext(Gdk.DragContext):
     def finish(self, success, del_, time):
-        Gtk = modules['Gtk']._introspection_module
+        Gtk = get_introspection_module('Gtk')
         Gtk.drag_finish(self, success, del_, time)
 
 DragContext = override(DragContext)
@@ -344,6 +344,29 @@ def color_parse(color):
     if not success:
         return None
     return color
+
+
+# Note, we cannot override the entire class as Gdk.Atom has no gtype, so just
+# hack some individual methods
+def _gdk_atom_str(atom):
+    n = atom.name()
+    if n:
+        return n
+    # fall back to atom index
+    return 'Gdk.Atom<%i>' % hash(atom)
+
+
+def _gdk_atom_repr(atom):
+    n = atom.name()
+    if n:
+        return 'Gdk.Atom<%s>' % n
+    # fall back to atom index
+    return 'Gdk.Atom<%i>' % hash(atom)
+
+
+Gdk.Atom.__str__ = _gdk_atom_str
+Gdk.Atom.__repr__ = _gdk_atom_repr
+
 
 # constants
 if Gdk._version >= '3.0':
