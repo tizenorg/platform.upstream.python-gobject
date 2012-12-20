@@ -14,7 +14,7 @@ Url:            http://ftp.gnome.org/pub/GNOME/sources/pygobject/
 Source:         http://download.gnome.org/sources/pygobject/3.7/%{_name}-%{version}.tar.xz
 BuildRequires:  fdupes
 BuildRequires:  glib2-devel >= 2.31.0
-BuildRequires:  gobject-introspection-devel >= 1.33.14
+BuildRequires:  gobject-introspection-devel >=  1.34.2
 BuildRequires:  libffi-devel
 BuildRequires:  python-cairo-devel
 BuildRequires:  python-devel
