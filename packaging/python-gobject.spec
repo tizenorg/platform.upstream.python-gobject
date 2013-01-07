@@ -21,6 +21,7 @@ BuildRequires:  python-devel
 BuildRequires:  pkgconfig(cairo)
 BuildRequires:  pkgconfig(cairo-gobject)
 BuildRequires:  python
+Provides:       pygobject, pygobject2
 
 %description
 Pygobjects is an extension module for python that gives you access to
