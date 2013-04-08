@@ -24,7 +24,8 @@ struct _PyGClosure {
 
 typedef enum {
     PYGOBJECT_USING_TOGGLE_REF = 1 << 0,
-    PYGOBJECT_IS_FLOATING_REF = 1 << 1
+    PYGOBJECT_IS_FLOATING_REF = 1 << 1,
+    PYGOBJECT_GOBJECT_WAS_FLOATING = 1 << 2,
 } PyGObjectFlags;
 
   /* closures is just an alias for what is found in the
@@ -102,7 +103,7 @@ struct _PyGObject_Functions {
     PyObject *(* type_wrapper_new)(GType type);
 
     gint (* enum_get_value)(GType enum_type, PyObject *obj, gint *val);
-    gint (* flags_get_value)(GType flag_type, PyObject *obj, gint *val);
+    gint (* flags_get_value)(GType flag_type, PyObject *obj, guint *val);
     void (* register_gtype_custom)(GType gtype,
 			    PyObject *(* from_func)(const GValue *value),
 			    int (* to_func)(GValue *value, PyObject *obj));
@@ -167,7 +168,7 @@ struct _PyGObject_Functions {
 			   const char *type_name_,
 			   const char *strip_prefix,
 			   GType gtype);
-    PyObject* (*flags_from_gtype)(GType gtype, int value);
+    PyObject* (*flags_from_gtype)(GType gtype, guint value);
 
     gboolean threads_enabled;
     int       (*enable_threads) (void);
@@ -187,7 +188,10 @@ struct _PyGObject_Functions {
 				      gpointer data);
     gboolean  (*gerror_exception_check) (GError **error);
     PyObject* (*option_group_new) (GOptionGroup *group);
-    GType (* type_from_object_strict) (PyObject *obj, gboolean strict);    
+    GType (* type_from_object_strict) (PyObject *obj, gboolean strict);
+
+    PyObject *(* newgobj_full)(GObject *obj, gboolean steal, gpointer g_class);
+    PyTypeObject *object_type;
 };
 
 #ifndef _INSIDE_PYGOBJECT_
@@ -202,6 +206,8 @@ struct _PyGObject_Functions *_PyGObject_API;
 #define pygobject_register_wrapper  (_PyGObject_API->register_wrapper)
 #define pygobject_lookup_class      (_PyGObject_API->lookup_class)
 #define pygobject_new               (_PyGObject_API->newgobj)
+#define pygobject_new_full          (_PyGObject_API->newgobj_full)
+#define PyGObject_Type              (*_PyGObject_API->object_type)
 #define pyg_closure_new             (_PyGObject_API->closure_new)
 #define pygobject_watch_closure     (_PyGObject_API->object_watch_closure)
 #define pyg_closure_set_exception_handler (_PyGObject_API->closure_set_exception_handler)

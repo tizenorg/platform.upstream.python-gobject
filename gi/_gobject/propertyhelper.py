@@ -149,6 +149,8 @@ class Property(object):
         @keyword maximum:  maximum allowed value (int, float, long only)
         """
 
+        self.name = None
+
         if type is None:
             type = object
         self.type = self._type_from_python(type)
@@ -166,9 +168,6 @@ class Property(object):
         # we don't want the lengthy Property class documentation showing up
         # on instances.
         self.__doc__ = blurb
-
-        if flags < 0 or flags > 32:
-            raise TypeError("invalid flag value: %r" % (flags,))
         self.flags = flags
 
         # Call after setting blurb for potential __doc__ usage.
@@ -180,7 +179,9 @@ class Property(object):
             getter = self._default_getter
             setter = self._default_setter
         self.getter(getter)
-        self.setter(setter)
+        # do not call self.setter() here, as this defines the property name
+        # already
+        self.fset = setter
 
         if minimum is not None:
             if minimum < self._get_minimum():
@@ -198,8 +199,6 @@ class Property(object):
         else:
             maximum = self._get_maximum()
         self.maximum = maximum
-
-        self.name = None
 
         self._exc = None
 
@@ -248,6 +247,11 @@ class Property(object):
     def setter(self, fset):
         """Set the setter function to fset. For use as a decorator."""
         self.fset = fset
+        # with a setter decorator, we must ignore the name of the method in
+        # install_properties, as this does not need to be a valid property name
+        # and does not define the property name. So set the name here.
+        if not self.name:
+            self.name = self.fget.__name__
         return self
 
     def _type_from_python(self, type_):
@@ -364,10 +368,18 @@ def install_properties(cls):
     props = []
     for name, prop in cls.__dict__.items():
         if isinstance(prop, Property):  # not same as the built-in
-            if name in gproperties:
-                raise ValueError('Property %s was already found in __gproperties__' % name)
-            prop.name = name
-            gproperties[name] = prop.get_pspec_args()
+            # if a property was defined with a decorator, it may already have
+            # a name; if it was defined with an assignment (prop = Property(...))
+            # we set the property's name to the member name
+            if not prop.name:
+                prop.name = name
+            # we will encounter the same property multiple times in case of
+            # custom setter methods
+            if prop.name in gproperties:
+                if gproperties[prop.name] == prop.get_pspec_args():
+                    continue
+                raise ValueError('Property %s was already found in __gproperties__' % prop.name)
+            gproperties[prop.name] = prop.get_pspec_args()
             props.append(prop)
 
     if not props:

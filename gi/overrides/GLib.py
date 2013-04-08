@@ -21,6 +21,7 @@
 
 import signal
 import warnings
+import sys
 
 from ..module import get_introspection_module
 from .._gi import (variant_new_tuple, variant_type_from_string, source_new,
@@ -220,7 +221,11 @@ class Variant(GLib.Variant):
         return self.print_(True)
 
     def __repr__(self):
-        return "GLib.Variant('%s', %s)" % (self.format_string, self.print_(True))
+        if hasattr(self, 'format_string'):
+            f = self.format_string
+        else:
+            f = self.get_type_string()
+        return "GLib.Variant('%s', %s)" % (f, self.print_(False))
 
     def __eq__(self, other):
         try:
@@ -286,6 +291,11 @@ class Variant(GLib.Variant):
         # variant (just unbox transparently)
         if self.get_type_string().startswith('v'):
             return self.get_variant().unpack()
+
+        # maybe
+        if self.get_type_string().startswith('m'):
+            m = self.get_maybe()
+            return m.unpack() if m else None
 
         raise NotImplementedError('unsupported GVariant type ' + self.get_type_string())
 
@@ -489,16 +499,17 @@ class MainLoop(GLib.MainLoop):
         def _handler(loop):
             loop.quit()
             loop._quit_by_sigint = True
-
-        # compatibility shim, keep around until we depend on glib 2.36
-        if hasattr(GLib, 'unix_signal_add'):
-            fn = GLib.unix_signal_add
-        else:
-            fn = GLib.unix_signal_add_full
-        self._signal_source = fn(GLib.PRIORITY_DEFAULT, signal.SIGINT, _handler, self)
+        if sys.platform != 'win32':
+            # compatibility shim, keep around until we depend on glib 2.36
+            if hasattr(GLib, 'unix_signal_add'):
+                fn = GLib.unix_signal_add
+            else:
+                fn = GLib.unix_signal_add_full
+            self._signal_source = fn(GLib.PRIORITY_DEFAULT, signal.SIGINT, _handler, self)
 
     def __del__(self):
-        GLib.source_remove(self._signal_source)
+        if hasattr(self, '_signal_source'):
+            GLib.source_remove(self._signal_source)
 
     def run(self):
         super(MainLoop, self).run()
@@ -527,6 +538,10 @@ class Source(GLib.Source):
         source.__class__ = cls
         setattr(source, '__pygi_custom_source', True)
         return source
+
+    def __del__(self):
+        if hasattr(self, '__pygi_custom_source'):
+            self.unref()
 
     # Backwards compatible API for optional arguments
     def attach(self, context=None):

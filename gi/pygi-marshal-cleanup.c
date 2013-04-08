@@ -24,20 +24,29 @@
 static inline void
 _cleanup_caller_allocates (PyGIInvokeState    *state,
                            PyGIArgCache       *cache,
-                           gpointer            data)
+                           gpointer            data,
+                           gboolean            was_processed)
 {
     PyGIInterfaceCache *iface_cache = (PyGIInterfaceCache *)cache;
 
-    if (iface_cache->g_type == G_TYPE_BOXED) {
+    if (g_type_is_a (iface_cache->g_type, G_TYPE_BOXED)) {
         gsize size;
+        if (was_processed)
+            return; /* will be cleaned up at deallocation */
         size = g_struct_info_get_size (iface_cache->interface_info);
         g_slice_free1 (size, data);
     } else if (iface_cache->g_type == G_TYPE_VALUE) {
+        if (was_processed)
+            g_value_unset (data);
         g_slice_free (GValue, data);
     } else if (iface_cache->is_foreign) {
+        if (was_processed)
+            return; /* will be cleaned up at deallocation */
         pygi_struct_foreign_release ((GIBaseInfo *)iface_cache->interface_info,
                                      data);
     } else {
+        if (was_processed)
+            return; /* will be cleaned up at deallocation */
         g_free (data);
     }
 }
@@ -92,6 +101,12 @@ pygi_marshal_cleanup_args_from_py_marshal_success (PyGIInvokeState   *state,
                 arg_cache->direction == PYGI_DIRECTION_FROM_PYTHON &&
                     state->args[i]->v_pointer != NULL)
             cleanup_func (state, arg_cache, state->args[i]->v_pointer, TRUE);
+
+        if (cleanup_func &&
+                arg_cache->direction == PYGI_DIRECTION_BIDIRECTIONAL &&
+                    state->args_data[i] != NULL) {
+            cleanup_func (state, arg_cache, state->args_data[i], TRUE);
+        }
     }
 }
 
@@ -99,6 +114,7 @@ void
 pygi_marshal_cleanup_args_to_py_marshal_success (PyGIInvokeState   *state,
                                                  PyGICallableCache *cache)
 {
+    GSList *cache_item;
     /* clean up the return if available */
     if (cache->return_cache != NULL) {
         PyGIMarshalCleanupFunc cleanup_func = cache->return_cache->to_py_cleanup;
@@ -110,7 +126,7 @@ pygi_marshal_cleanup_args_to_py_marshal_success (PyGIInvokeState   *state,
     }
 
     /* Now clean up args */
-    GSList *cache_item = cache->to_py_args;
+    cache_item = cache->to_py_args;
     while (cache_item) {
         PyGIArgCache *arg_cache = (PyGIArgCache *) cache_item->data;
         PyGIMarshalCleanupFunc cleanup_func = arg_cache->to_py_cleanup;
@@ -121,6 +137,12 @@ pygi_marshal_cleanup_args_to_py_marshal_success (PyGIInvokeState   *state,
                           arg_cache,
                           data,
                           TRUE);
+        else if (arg_cache->is_caller_allocates && data != NULL) {
+            _cleanup_caller_allocates (state,
+                                       arg_cache,
+                                       data,
+                                       TRUE);
+        }
 
         cache_item = cache_item->next;
     }
@@ -151,7 +173,8 @@ pygi_marshal_cleanup_args_from_py_parameter_fail (PyGIInvokeState   *state,
         } else if (arg_cache->is_caller_allocates && data != NULL) {
             _cleanup_caller_allocates (state,
                                        arg_cache,
-                                       data);
+                                       data,
+                                       FALSE);
         }
     }
 }
@@ -351,8 +374,17 @@ _pygi_marshal_cleanup_from_py_array (PyGIInvokeState *state,
                 else if (sequence_cache->item_cache->is_pointer)
                     item = g_array_index (array_, gpointer, i);
                 /* case 3: C array or GArray with simple types or structs */
-                else
+                else {
                     item = array_->data + i * sequence_cache->item_size;
+                    /* special-case hack: GValue array items do not get slice
+                     * allocated in _pygi_marshal_from_py_array(), so we must
+                     * not try to deallocate it as a slice and thus
+                     * short-circuit cleanup_func. */
+                    if (cleanup_func == _pygi_marshal_cleanup_from_py_interface_struct_gvalue) {
+                        g_value_unset ((GValue*) item);
+                        continue;
+                    }
+                }
 
                 cleanup_func (state, sequence_cache->item_cache, item, TRUE);
             }

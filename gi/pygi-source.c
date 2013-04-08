@@ -232,7 +232,7 @@ pyg_source_set_callback(PyGObject *self_module, PyObject *args)
  * GSourceFuncs which call back to Python.
  */
 PyObject*
-pyg_source_new ()
+pyg_source_new (void)
 {
     PyGRealSource *source = NULL;
     PyObject      *py_type;
@@ -240,7 +240,8 @@ pyg_source_new ()
     source = (PyGRealSource*) g_source_new (&pyg_source_funcs, sizeof (PyGRealSource));
 
     py_type = _pygi_type_import_by_name ("GLib", "Source");
-    source->obj = _pygi_boxed_new ( (PyTypeObject *) py_type, source, FALSE);
+    /* g_source_new uses malloc, not slices */
+    source->obj = _pygi_boxed_new ( (PyTypeObject *) py_type, source, FALSE, 0);
 
     return source->obj;
 }

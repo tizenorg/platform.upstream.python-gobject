@@ -218,7 +218,6 @@ class TestEverything(unittest.TestCase):
                          GObject.G_MAXDOUBLE)
         self.assertEqual(Everything.test_double(GObject.G_MINDOUBLE),
                          GObject.G_MINDOUBLE)
-        self.assertRaises(ValueError, Everything.test_double, GObject.G_MAXDOUBLE * 2)
 
         (two, three) = Everything.test_multi_double_args(2.5)
         self.assertAlmostEqual(two, 5.0)
@@ -675,17 +674,14 @@ class TestCallbacks(unittest.TestCase):
         self.assertEqual(TestCallbacks.called, 2)
         self.assertEqual(sys.getrefcount(callback), refcount)
 
-    # FIXME: TypeError: callback() takes 2 positional arguments but 4 were given
-    # does not remove the array length arguments
-    @unittest.expectedFailure
     def test_callback_scope_call_array(self):
         # This tests a callback that gets called multiple times from a
         # single scope call in python with array arguments
         TestCallbacks.callargs = []
 
-        # works with:
-        #def callback(one, one_length, two, two_length):
-        def callback(one, two):
+        # FIXME: would be cleaner without the explicit length args:
+        # def callback(one, two):
+        def callback(one, one_length, two, two_length):
             TestCallbacks.callargs.append((one, two))
             return len(TestCallbacks.callargs)
 
@@ -1194,6 +1190,28 @@ class TestSignals(unittest.TestCase):
         obj.connect('sig-with-uint64-prop', callback)
         obj.emit_sig_with_uint64()
         self.assertEqual(obj.callback_i, GObject.G_MAXUINT64)
+
+    def test_intarray_ret(self):
+        obj = Everything.TestObj()
+
+        def callback(obj, i):
+            obj.callback_i = i
+            return [i, i + 1]
+
+        obj.callback_i = None
+
+        try:
+            obj.connect('sig-with-intarray-ret', callback)
+        except TypeError as e:
+            # compat with g-i 1.34.x
+            if 'unknown signal' in str(e):
+                return
+            raise
+
+        rv = obj.emit('sig-with-intarray-ret', 42)
+        self.assertEqual(obj.callback_i, 42)
+        self.assertEqual(type(rv), GLib.Array)
+        self.assertEqual(rv.len, 2)
 
 
 @unittest.skipUnless(has_cairo, 'built without cairo support')

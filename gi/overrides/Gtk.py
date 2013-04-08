@@ -21,7 +21,7 @@
 
 import sys
 from gi.repository import GObject
-from ..overrides import override
+from ..overrides import override, strip_boolean_result
 from ..module import get_introspection_module
 from gi import PyGIDeprecationWarning
 
@@ -48,16 +48,39 @@ python module to use with Gtk 2.0"
     warnings.warn(warn_msg, RuntimeWarning)
 
 
+def _construct_target_list(targets):
+    """Create a list of TargetEntry items from a list of tuples in the form (target, flags, info)
+
+    The list can also contain existing TargetEntry items in which case the existing entry
+    is re-used in the return list.
+    """
+    target_entries = []
+    for entry in targets:
+        if not isinstance(entry, Gtk.TargetEntry):
+            entry = Gtk.TargetEntry.new(*entry)
+        target_entries.append(entry)
+    return target_entries
+
+__all__.append('_construct_target_list')
+
+
 class Widget(Gtk.Widget):
 
-    def translate_coordinates(self, dest_widget, src_x, src_y):
-        success, dest_x, dest_y = super(Widget, self).translate_coordinates(
-            dest_widget, src_x, src_y)
-        if success:
-            return (dest_x, dest_y,)
+    translate_coordinates = strip_boolean_result(Gtk.Widget.translate_coordinates)
 
     def render_icon(self, stock_id, size, detail=None):
         return super(Widget, self).render_icon(stock_id, size, detail)
+
+    def drag_dest_set_target_list(self, target_list):
+        if not isinstance(target_list, Gtk.TargetList):
+            target_list = Gtk.TargetList.new(_construct_target_list(target_list))
+        super(Widget, self).drag_dest_set_target_list(target_list)
+
+    def drag_source_set_target_list(self, target_list):
+        if not isinstance(target_list, Gtk.TargetList):
+            target_list = Gtk.TargetList.new(_construct_target_list(target_list))
+        super(Widget, self).drag_source_set_target_list(target_list)
+
 
 Widget = override(Widget)
 __all__.append('Widget')
@@ -80,10 +103,8 @@ class Container(Gtk.Container, Widget):
     # alias for Python 2.x object protocol
     __nonzero__ = __bool__
 
-    def get_focus_chain(self):
-        success, widgets = super(Container, self).get_focus_chain()
-        if success:
-            return widgets
+    get_focus_chain = strip_boolean_result(Gtk.Container.get_focus_chain)
+
 
 Container = override(Container)
 __all__.append('Container')
@@ -92,16 +113,10 @@ __all__.append('Container')
 class Editable(Gtk.Editable):
 
     def insert_text(self, text, position):
-        pos = super(Editable, self).insert_text(text, -1, position)
+        return super(Editable, self).insert_text(text, -1, position)
 
-        return pos
+    get_selection_bounds = strip_boolean_result(Gtk.TextBuffer.get_selection_bounds, fail_ret=())
 
-    def get_selection_bounds(self):
-        success, start_pos, end_pos = super(Editable, self).get_selection_bounds()
-        if success:
-            return (start_pos, end_pos,)
-        else:
-            return tuple()
 
 Editable = override(Editable)
 __all__.append("Editable")
@@ -294,7 +309,7 @@ class UIManager(Gtk.UIManager):
         if not isinstance(buffer, _basestring):
             raise TypeError('buffer must be a string')
 
-        length = len(buffer)
+        length = len(buffer.encode('UTF-8'))
 
         return Gtk.UIManager.add_ui_from_string(self, buffer, length)
 
@@ -306,11 +321,7 @@ __all__.append('UIManager')
 
 
 class ComboBox(Gtk.ComboBox, Container):
-
-    def get_active_iter(self):
-        success, aiter = super(ComboBox, self).get_active_iter()
-        if success:
-            return aiter
+    get_active_iter = strip_boolean_result(Gtk.ComboBox.get_active_iter)
 
 ComboBox = override(ComboBox)
 __all__.append('ComboBox')
@@ -401,6 +412,9 @@ __all__.append('Builder')
 
 class Window(Gtk.Window):
     def __init__(self, type=Gtk.WindowType.TOPLEVEL, **kwds):
+        if not initialized:
+            raise RuntimeError("Gtk couldn't be initialized")
+
         # type is a construct-only property; if it is already set (e. g. by
         # GtkBuilder), do not try to set it again and just ignore it
         try:
@@ -581,20 +595,9 @@ class IconView(Gtk.IconView):
     def __init__(self, model=None, **kwds):
         Gtk.IconView.__init__(self, model=model, **kwds)
 
-    def get_item_at_pos(self, x, y):
-        success, path, cell = super(IconView, self).get_item_at_pos(x, y)
-        if success:
-            return (path, cell,)
-
-    def get_visible_range(self):
-        success, start_path, end_path = super(IconView, self).get_visible_range()
-        if success:
-            return (start_path, end_path,)
-
-    def get_dest_item_at_pos(self, drag_x, drag_y):
-        success, path, pos = super(IconView, self).get_dest_item_at_pos(drag_x, drag_y)
-        if success:
-            return path, pos
+    get_item_at_pos = strip_boolean_result(Gtk.IconView.get_item_at_pos)
+    get_visible_range = strip_boolean_result(Gtk.IconView.get_visible_range)
+    get_dest_item_at_pos = strip_boolean_result(Gtk.IconView.get_dest_item_at_pos)
 
 IconView = override(IconView)
 __all__.append('IconView')
@@ -610,22 +613,14 @@ __all__.append('ToolButton')
 
 
 class IMContext(Gtk.IMContext):
-
-    def get_surrounding(self):
-        success, text, cursor_index = super(IMContext, self).get_surrounding()
-        if success:
-            return (text, cursor_index,)
+    get_surrounding = strip_boolean_result(Gtk.IMContext.get_surrounding)
 
 IMContext = override(IMContext)
 __all__.append('IMContext')
 
 
 class RecentInfo(Gtk.RecentInfo):
-
-    def get_application_info(self, app_name):
-        success, app_exec, count, time = super(RecentInfo, self).get_application_info(app_name)
-        if success:
-            return (app_exec, count, time,)
+    get_application_info = strip_boolean_result(Gtk.RecentInfo.get_application_info)
 
 RecentInfo = override(RecentInfo)
 __all__.append('RecentInfo')
@@ -709,12 +704,7 @@ class TextBuffer(Gtk.TextBuffer):
 
         Gtk.TextBuffer.insert_at_cursor(self, text, length)
 
-    def get_selection_bounds(self):
-        success, start, end = super(TextBuffer, self).get_selection_bounds()
-        if success:
-            return (start, end)
-        else:
-            return ()
+    get_selection_bounds = strip_boolean_result(Gtk.TextBuffer.get_selection_bounds, fail_ret=())
 
 TextBuffer = override(TextBuffer)
 __all__.append('TextBuffer')
@@ -722,21 +712,8 @@ __all__.append('TextBuffer')
 
 class TextIter(Gtk.TextIter):
 
-    def forward_search(self, string, flags, limit):
-        success, match_start, match_end = super(TextIter, self).forward_search(string,
-                                                                               flags, limit)
-        if success:
-            return (match_start, match_end)
-        else:
-            return None
-
-    def backward_search(self, string, flags, limit):
-        success, match_start, match_end = super(TextIter, self).backward_search(string,
-                                                                                flags, limit)
-        if success:
-            return (match_start, match_end)
-        else:
-            return None
+    forward_search = strip_boolean_result(Gtk.TextIter.forward_search)
+    backward_search = strip_boolean_result(Gtk.TextIter.backward_search)
 
     def begins_tag(self, tag=None):
         return super(TextIter, self).begins_tag(tag)
@@ -780,6 +757,12 @@ class TreeModel(Gtk.TreeModel):
                 raise IndexError("could not find tree path '%s'" % key)
             return aiter
 
+    def _coerce_path(self, path):
+        if isinstance(path, Gtk.TreePath):
+            return path
+        else:
+            return TreePath(path)
+
     def __getitem__(self, key):
         aiter = self._getiter(key)
         return TreeModelRow(self, aiter)
@@ -795,24 +778,18 @@ class TreeModel(Gtk.TreeModel):
     def __iter__(self):
         return TreeModelRowIter(self, self.get_iter_first())
 
-    def get_iter(self, path):
-        if not isinstance(path, Gtk.TreePath):
-            path = TreePath(path)
+    get_iter_first = strip_boolean_result(Gtk.TreeModel.get_iter_first)
+    iter_children = strip_boolean_result(Gtk.TreeModel.iter_children)
+    iter_nth_child = strip_boolean_result(Gtk.TreeModel.iter_nth_child)
+    iter_parent = strip_boolean_result(Gtk.TreeModel.iter_parent)
+    get_iter_from_string = strip_boolean_result(Gtk.TreeModel.get_iter_from_string,
+                                                ValueError, 'invalid tree path')
 
+    def get_iter(self, path):
+        path = self._coerce_path(path)
         success, aiter = super(TreeModel, self).get_iter(path)
         if not success:
             raise ValueError("invalid tree path '%s'" % path)
-        return aiter
-
-    def get_iter_first(self):
-        success, aiter = super(TreeModel, self).get_iter_first()
-        if success:
-            return aiter
-
-    def get_iter_from_string(self, path_string):
-        success, aiter = super(TreeModel, self).get_iter_from_string(path_string)
-        if not success:
-            raise ValueError("invalid tree path '%s'" % path_string)
         return aiter
 
     def iter_next(self, aiter):
@@ -826,21 +803,6 @@ class TreeModel(Gtk.TreeModel):
         success = super(TreeModel, self).iter_previous(prev_iter)
         if success:
             return prev_iter
-
-    def iter_children(self, aiter):
-        success, child_iter = super(TreeModel, self).iter_children(aiter)
-        if success:
-            return child_iter
-
-    def iter_nth_child(self, parent, n):
-        success, child_iter = super(TreeModel, self).iter_nth_child(parent, n)
-        if success:
-            return child_iter
-
-    def iter_parent(self, aiter):
-        success, parent_iter = super(TreeModel, self).iter_parent(aiter)
-        if success:
-            return parent_iter
 
     def _convert_row(self, row):
         # TODO: Accept a dictionary for row
@@ -872,84 +834,11 @@ class TreeModel(Gtk.TreeModel):
             self.set_value(treeiter, column, value)
 
     def _convert_value(self, column, value):
-        if value is None:
-            return None
+        '''Convert value to a GObject.Value of the expected type'''
 
-        # we may need to convert to a basic type
-        type_ = self.get_column_type(column)
-        if type_ == GObject.TYPE_STRING:
-            if isinstance(value, str):
-                value = str(value)
-            elif sys.version_info < (3, 0):
-                if isinstance(value, unicode):
-                    value = value.encode('UTF-8')
-                else:
-                    raise ValueError('Expected string or unicode for column %i but got %s%s' % (column, value, type(value)))
-            else:
-                raise ValueError('Expected a string for column %i but got %s' % (column, type(value)))
-        elif type_ == GObject.TYPE_FLOAT or type_ == GObject.TYPE_DOUBLE:
-            if isinstance(value, float):
-                value = float(value)
-            else:
-                raise ValueError('Expected a float for column %i but got %s' % (column, type(value)))
-        elif type_ == GObject.TYPE_LONG or type_ == GObject.TYPE_INT:
-            if isinstance(value, int):
-                value = int(value)
-            elif sys.version_info < (3, 0):
-                if isinstance(value, long):
-                    value = long(value)
-                else:
-                    raise ValueError('Expected an long for column %i but got %s' % (column, type(value)))
-            else:
-                raise ValueError('Expected an integer for column %i but got %s' % (column, type(value)))
-        elif type_ == GObject.TYPE_BOOLEAN:
-            cmp_classes = [int]
-            if sys.version_info < (3, 0):
-                cmp_classes.append(long)
-
-            if isinstance(value, tuple(cmp_classes)):
-                value = bool(value)
-            else:
-                raise ValueError('Expected a bool for column %i but got %s' % (column, type(value)))
-        else:
-            # use GValues directly to marshal to the correct type
-            # standard object checks should take care of validation
-            # so we don't have to do it here
-            value_container = GObject.Value()
-            value_container.init(type_)
-            if type_ == GObject.TYPE_CHAR:
-                value_container.set_char(value)
-                value = value_container
-            elif type_ == GObject.TYPE_UCHAR:
-                value_container.set_uchar(value)
-                value = value_container
-            elif type_ == GObject.TYPE_UNICHAR:
-                cmp_classes = [str]
-                if sys.version_info < (3, 0):
-                    cmp_classes.append(unicode)
-
-                if isinstance(value, tuple(cmp_classes)):
-                    value = ord(value[0])
-
-                value_container.set_uint(value)
-                value = value_container
-            elif type_ == GObject.TYPE_UINT:
-                value_container.set_uint(value)
-                value = value_container
-            elif type_ == GObject.TYPE_ULONG:
-                value_container.set_ulong(value)
-                value = value_container
-            elif type_ == GObject.TYPE_INT64:
-                value_container.set_int64(value)
-                value = value_container
-            elif type_ == GObject.TYPE_UINT64:
-                value_container.set_uint64(value)
-                value = value_container
-            elif type_ == GObject.TYPE_PYOBJECT:
-                value_container.set_boxed(value)
-                value = value_container
-
-        return value
+        if isinstance(value, GObject.Value):
+            return value
+        return GObject.Value(self.get_column_type(column), value)
 
     def get(self, treeiter, *columns):
         n_columns = self.get_n_columns()
@@ -969,18 +858,34 @@ class TreeModel(Gtk.TreeModel):
     def filter_new(self, root=None):
         return super(TreeModel, self).filter_new(root)
 
+    #
+    # Signals supporting python iterables as tree paths
+    #
+    def row_changed(self, path, iter):
+        return super(TreeModel, self).row_changed(self._coerce_path(path), iter)
+
+    def row_inserted(self, path, iter):
+        return super(TreeModel, self).row_inserted(self._coerce_path(path), iter)
+
+    def row_has_child_toggled(self, path, iter):
+        return super(TreeModel, self).row_has_child_toggled(self._coerce_path(path),
+                                                            iter)
+
+    def row_deleted(self, path):
+        return super(TreeModel, self).row_deleted(self._coerce_path(path))
+
+    def rows_reordered(self, path, iter, new_order):
+        return super(TreeModel, self).rows_reordered(self._coerce_path(path),
+                                                     iter, new_order)
+
+
 TreeModel = override(TreeModel)
 __all__.append('TreeModel')
 
 
 class TreeSortable(Gtk.TreeSortable, ):
 
-    def get_sort_column_id(self):
-        success, sort_column_id, order = super(TreeSortable, self).get_sort_column_id()
-        if success:
-            return (sort_column_id, order,)
-        else:
-            return (None, None,)
+    get_sort_column_id = strip_boolean_result(Gtk.TreeSortable.get_sort_column_id, fail_ret=(None, None))
 
     def set_sort_func(self, sort_column_id, sort_func, user_data=None):
         super(TreeSortable, self).set_sort_func(sort_column_id, sort_func, user_data)
@@ -1205,7 +1110,7 @@ class TreePath(Gtk.TreePath):
     def __new__(cls, path=0):
         if isinstance(path, int):
             path = str(path)
-        elif isinstance(path, tuple):
+        elif not isinstance(path, _basestring):
             path = ":".join(str(val) for val in path)
 
         if len(path) == 0:
@@ -1336,38 +1241,18 @@ class TreeView(Gtk.TreeView, Container):
         if model:
             self.set_model(model)
 
-    def get_path_at_pos(self, x, y):
-        success, path, column, cell_x, cell_y = super(TreeView, self).get_path_at_pos(x, y)
-        if success:
-            return (path, column, cell_x, cell_y,)
-
-    def get_visible_range(self):
-        success, start_path, end_path = super(TreeView, self).get_visible_range()
-        if success:
-            return (start_path, end_path,)
-
-    def get_dest_row_at_pos(self, drag_x, drag_y):
-        success, path, pos = super(TreeView, self).get_dest_row_at_pos(drag_x, drag_y)
-        if success:
-            return (path, pos,)
-
-    def _construct_target_list(self, targets):
-        # FIXME: this should most likely be part of Widget or a global helper
-        #        function
-        target_entries = []
-        for t in targets:
-            entry = Gtk.TargetEntry.new(*t)
-            target_entries.append(entry)
-        return target_entries
+    get_path_at_pos = strip_boolean_result(Gtk.TreeView.get_path_at_pos)
+    get_visible_range = strip_boolean_result(Gtk.TreeView.get_visible_range)
+    get_dest_row_at_pos = strip_boolean_result(Gtk.TreeView.get_dest_row_at_pos)
 
     def enable_model_drag_source(self, start_button_mask, targets, actions):
-        target_entries = self._construct_target_list(targets)
+        target_entries = _construct_target_list(targets)
         super(TreeView, self).enable_model_drag_source(start_button_mask,
                                                        target_entries,
                                                        actions)
 
     def enable_model_drag_dest(self, targets, actions):
-        target_entries = self._construct_target_list(targets)
+        target_entries = _construct_target_list(targets)
         super(TreeView, self).enable_model_drag_dest(target_entries,
                                                      actions)
 
@@ -1408,10 +1293,7 @@ class TreeViewColumn(Gtk.TreeViewColumn):
         for (name, value) in attributes.items():
             self.add_attribute(cell_renderer, name, value)
 
-    def cell_get_position(self, cell_renderer):
-        success, start_pos, width = super(TreeViewColumn, self).cell_get_position(cell_renderer)
-        if success:
-            return (start_pos, width,)
+    cell_get_position = strip_boolean_result(Gtk.TreeViewColumn.cell_get_position)
 
     def set_cell_data_func(self, cell_renderer, func, func_data=None):
         super(TreeViewColumn, self).set_cell_data_func(cell_renderer, func, func_data)
@@ -1592,6 +1474,11 @@ class TreeModelFilter(Gtk.TreeModelFilter):
     def set_visible_func(self, func, data=None):
         super(TreeModelFilter, self).set_visible_func(func, data)
 
+    def set_value(self, iter, column, value):
+        # Delegate to child model
+        iter = self.convert_iter_to_child_iter(iter)
+        self.get_model().set_value(iter, column, value)
+
 TreeModelFilter = override(TreeModelFilter)
 __all__.append('TreeModelFilter')
 
@@ -1609,18 +1496,8 @@ _Gtk_main_quit = Gtk.main_quit
 def main_quit(*args):
     _Gtk_main_quit()
 
-_Gtk_stock_lookup = Gtk.stock_lookup
-
-
-@override(Gtk.stock_lookup)
-def stock_lookup(*args):
-    success, item = _Gtk_stock_lookup(*args)
-    if not success:
-        return None
-
-    return item
+stock_lookup = strip_boolean_result(Gtk.stock_lookup)
+__all__.append('stock_lookup')
 
 initialized, argv = Gtk.init_check(sys.argv)
 sys.argv = list(argv)
-if not initialized:
-    raise RuntimeError("Gtk couldn't be initialized")

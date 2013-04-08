@@ -18,6 +18,13 @@ if sys.version_info[:2] == (2, 6):
     unittest.skipUnless = skipUnless
     unittest.expectedFailure = lambda obj: obj
 
+    def skipIf(condition, reason):
+        if condition:
+            sys.stderr.write('[expected failure] ')
+        return lambda obj: obj
+
+    unittest.skipIf = skipIf
+
     def assertGreater(self, a, b, msg=None):
         if not a > b:
             self.fail('%s not greater than %s' % (repr(a), repr(b)))
@@ -26,12 +33,22 @@ if sys.version_info[:2] == (2, 6):
         if not a >= b:
             self.fail('%s not greater than or equal to %s' % (repr(a), repr(b)))
 
+    def assertLess(self, a, b, msg=None):
+        if not a < b:
+            self.fail('%s not less than %s' % (repr(a), repr(b)))
+
+    def assertLessEqual(self, a, b, msg=None):
+        if not a <= b:
+            self.fail('%s not less than or equal to %s' % (repr(a), repr(b)))
+
     def assertIsInstance(self, obj, cls, msg=None):
         if not isinstance(obj, cls):
             self.fail('%s is not an instance of %r' % (repr(obj), cls))
 
     unittest.TestCase.assertGreaterEqual = assertGreaterEqual
     unittest.TestCase.assertGreater = assertGreater
+    unittest.TestCase.assertLessEqual = assertLessEqual
+    unittest.TestCase.assertLess = assertLess
     unittest.TestCase.assertIsInstance = assertIsInstance
 
 if sys.version_info[:2] == (2, 7):
@@ -59,6 +76,7 @@ os.environ['G_DEBUG'] = 'fatal-warnings fatal-criticals'
 # first.
 os.environ['GSETTINGS_BACKEND'] = 'memory'
 os.environ['GSETTINGS_SCHEMA_DIR'] = tests_builddir
+os.environ['G_FILENAME_ENCODING'] = 'UTF-8'
 
 # Load tests.
 if 'TEST_NAMES' in os.environ:

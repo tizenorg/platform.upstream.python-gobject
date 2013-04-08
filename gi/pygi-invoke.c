@@ -366,7 +366,7 @@ static gboolean _caller_alloc (PyGIInvokeState *state,
 
         state->out_args[out_count].v_pointer = NULL;
         state->args[arg_count] = &state->out_args[out_count];
-        if (iface_cache->g_type == G_TYPE_BOXED) {
+        if (g_type_is_a (iface_cache->g_type, G_TYPE_BOXED)) {
             state->args[arg_count]->v_pointer =
                 _pygi_boxed_alloc (iface_cache->interface_info, NULL);
         } else if (iface_cache->g_type == G_TYPE_VALUE) {
@@ -501,6 +501,7 @@ _invoke_marshal_in_args (PyGIInvokeState *state, PyGICallableCache *cache)
 
         c_arg = state->args[i];
         if (arg_cache->from_py_marshaller != NULL) {
+            gboolean success;
             if (!arg_cache->allow_none && py_arg == Py_None) {
                 PyErr_Format (PyExc_TypeError,
                               "Argument %zd does not allow None as a value",
@@ -511,7 +512,7 @@ _invoke_marshal_in_args (PyGIInvokeState *state, PyGICallableCache *cache)
                                                                    i - 1);
                  return FALSE;
             }
-            gboolean success = arg_cache->from_py_marshaller (state,
+            success = arg_cache->from_py_marshaller (state,
                                                               cache,
                                                               arg_cache,
                                                               py_arg,

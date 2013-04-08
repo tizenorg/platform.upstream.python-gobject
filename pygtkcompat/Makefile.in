@@ -216,6 +216,7 @@ SHELL = @SHELL@
 STRIP = @STRIP@
 THREADING_CFLAGS = @THREADING_CFLAGS@
 VERSION = @VERSION@
+WARN_CFLAGS = @WARN_CFLAGS@
 abs_builddir = @abs_builddir@
 abs_srcdir = @abs_srcdir@
 abs_top_builddir = @abs_top_builddir@
@@ -275,6 +276,7 @@ top_srcdir = @top_srcdir@
 pygtkcompatdir = $(pyexecdir)/pygtkcompat
 pygtkcompat_PYTHON = \
 	__init__.py \
+	generictreemodel.py \
 	pygtkcompat.py
 
 all: all-am

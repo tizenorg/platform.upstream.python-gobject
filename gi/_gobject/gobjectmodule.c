@@ -37,7 +37,6 @@
 #include "pygpointer.h"
 #include "pygtype.h"
 
-static PyObject *_pyg_signal_accumulator_true_handled_func;
 static GHashTable *log_handlers = NULL;
 static gboolean log_handlers_disabled = FALSE;
 
@@ -340,17 +339,13 @@ create_signal (GType instance_type, const gchar *signal_name, PyObject *tuple)
 	Py_DECREF(item);
     }
 
-    if (py_accum == _pyg_signal_accumulator_true_handled_func)
-        accumulator = g_signal_accumulator_true_handled;
-    else {
-        if (py_accum != NULL && py_accum != Py_None) {
-            accum_data = g_new(PyGSignalAccumulatorData, 1);
-            accum_data->callable = py_accum;
-            Py_INCREF(py_accum);
-            accum_data->user_data = py_accum_data;
-            Py_XINCREF(py_accum_data);
-            accumulator = _pyg_signal_accumulator;
-        }
+    if (py_accum != NULL && py_accum != Py_None) {
+        accum_data = g_new(PyGSignalAccumulatorData, 1);
+        accum_data->callable = py_accum;
+        Py_INCREF(py_accum);
+        accum_data->user_data = py_accum_data;
+        Py_XINCREF(py_accum_data);
+        accumulator = _pyg_signal_accumulator;
     }
 
     signal_id = g_signal_newv(signal_name, instance_type, signal_flags,
@@ -577,7 +572,7 @@ create_property (const gchar  *prop_name,
 		return NULL;
 
 	    if (pyg_flags_get_value(prop_type, pydefault,
-				    (gint *)&default_value))
+				    &default_value))
 		return NULL;
 
 	    pspec = g_param_spec_flags (prop_name, nick, blurb,
@@ -972,18 +967,18 @@ get_type_name_for_class(PyTypeObject *class)
 }
 
 
-static GStaticPrivate pygobject_construction_wrapper = G_STATIC_PRIVATE_INIT;
+static GPrivate pygobject_construction_wrapper;
 
 static inline void
 pygobject_init_wrapper_set(PyObject *wrapper)
 {
-    g_static_private_set(&pygobject_construction_wrapper, wrapper, NULL);
+    g_private_set(&pygobject_construction_wrapper, wrapper);
 }
 
 static inline PyObject *
 pygobject_init_wrapper_get(void)
 {
-    return (PyObject *) g_static_private_get(&pygobject_construction_wrapper);
+    return (PyObject *) g_private_get(&pygobject_construction_wrapper);
 }
 
 int
@@ -996,7 +991,11 @@ pygobject_constructv(PyGObject  *self,
         pygobject_init_wrapper_set((PyObject *) self);
         obj = g_object_newv(pyg_type_from_object((PyObject *) self),
                             n_parameters, parameters);
+
+        if (g_object_is_floating (obj))
+            self->private_flags.flags |= PYGOBJECT_GOBJECT_WAS_FLOATING;
         pygobject_sink (obj);
+
         pygobject_init_wrapper_set(NULL);
         if (self->obj == NULL) {
             self->obj = obj;
@@ -1034,7 +1033,9 @@ pygobject__g_instance_init(GTypeInstance   *instance,
            * now */
         PyGILState_STATE state;
         state = pyglib_gil_state_ensure();
-        wrapper = pygobject_new_full(object, FALSE, g_class);
+        wrapper = pygobject_new_full(object,
+                                     /*steal=*/ FALSE,
+                                     g_class);
 
         /* float the wrapper ref here because we are going to orphan it
          * so we don't destroy the wrapper. The next call to pygobject_new_full
@@ -1477,7 +1478,7 @@ pyg_object_new (PyGObject *self, PyObject *args, PyObject *kwargs)
 
     if (obj) {
         pygobject_sink (obj);
-	self = (PyGObject *) pygobject_new_full((GObject *)obj, FALSE, NULL);
+	self = (PyGObject *) pygobject_new((GObject *)obj);
         g_object_unref(obj);
     } else
         self = NULL;
@@ -1665,38 +1666,6 @@ pyg_add_emission_hook(PyGObject *self, PyObject *args)
 }
 
 static PyObject *
-pyg_remove_emission_hook(PyGObject *self, PyObject *args)
-{
-    PyObject *pygtype, *repr;
-    char *name;
-    guint signal_id;
-    gulong hook_id;
-    GType gtype;
-
-    if (!PyArg_ParseTuple(args, "Osk:gobject.remove_emission_hook",
-			  &pygtype, &name, &hook_id))
-	return NULL;
-
-    if ((gtype = pyg_type_from_object(pygtype)) == 0) {
-	return NULL;
-    }
-
-    if (!g_signal_parse_name(name, gtype, &signal_id, NULL, TRUE)) {
-	repr = PyObject_Repr((PyObject*)self);
-	PyErr_Format(PyExc_TypeError, "%s: unknown signal name: %s",
-                 PYGLIB_PyUnicode_AsString(repr),
-                 name);
-	Py_DECREF(repr);
-	return NULL;
-    }
-
-    g_signal_remove_emission_hook(signal_id, hook_id);
-
-    Py_INCREF(Py_None);
-    return Py_None;
-}
-
-static PyObject *
 pyg__install_metaclass(PyObject *dummy, PyTypeObject *metaclass)
 {
     Py_INCREF(metaclass);
@@ -1727,8 +1696,6 @@ static PyMethodDef _gobject_functions[] = {
       (PyCFunction)pyg_signal_accumulator_true_handled, METH_VARARGS },
     { "add_emission_hook",
       (PyCFunction)pyg_add_emission_hook, METH_VARARGS },
-    { "remove_emission_hook",
-      (PyCFunction)pyg_remove_emission_hook, METH_VARARGS },
     { "_install_metaclass",
       (PyCFunction)pyg__install_metaclass, METH_O },
 
@@ -2117,7 +2084,10 @@ struct _PyGObject_Functions pygobject_api_functions = {
   pyg_gerror_exception_check,
 
   pyglib_option_group_new,
-  pyg_type_from_object_strict
+  pyg_type_from_object_strict,
+
+  pygobject_new_full,
+  &PyGObject_Type
 };
 
 /* for addon libraries ... */
@@ -2205,7 +2175,9 @@ PYGLIB_MODULE_START(_gobject, "_gobject")
 {
     PyObject *d;
 
+#if !defined(GLIB_VERSION_2_36)
     g_type_init();
+#endif
     pyglib_init();
 
     d = PyModule_GetDict(module);
@@ -2222,10 +2194,6 @@ PYGLIB_MODULE_START(_gobject, "_gobject")
     pygobject_pointer_register_types(d);
     pygobject_enum_register_types(d);
     pygobject_flags_register_types(d);
-
-      /* signal registration recognizes this special accumulator 'constant' */
-    _pyg_signal_accumulator_true_handled_func = \
-        PyDict_GetItemString(d, "signal_accumulator_true_handled");
 
     pygobject_api_functions.threads_enabled = pyglib_threads_enabled();
     _pyglib_notify_on_enabling_threads(pyg_note_threads_enabled);

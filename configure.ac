@@ -17,8 +17,8 @@ m4_define(python3_min_ver, 3.1)
 
 dnl the pygobject version number
 m4_define(pygobject_major_version, 3)
-m4_define(pygobject_minor_version, 7)
-m4_define(pygobject_micro_version, 3)
+m4_define(pygobject_minor_version, 8)
+m4_define(pygobject_micro_version, 0)
 m4_define(pygobject_version, pygobject_major_version.pygobject_minor_version.pygobject_micro_version)
 
 dnl versions of packages we require ...
@@ -42,7 +42,7 @@ AC_SUBST(PYGOBJECT_MINOR_VERSION, pygobject_minor_version)
 AC_DEFINE(PYGOBJECT_MICRO_VERSION, pygobject_micro_version, [pygobject micro version])
 AC_SUBST(PYGOBJECT_MICRO_VERSION, pygobject_micro_version)
 
-AM_CONFIG_HEADER(config.h)
+AC_CONFIG_HEADERS(config.h)
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES(yes)])
 AM_INIT_AUTOMAKE([1.11.1 foreign no-dist-gzip dist-xz])
 
@@ -80,7 +80,6 @@ LT_INIT([dlopen win32-dll disable-static])
 
 AC_SEARCH_LIBS([strerror],[cposix])
 AC_PROG_CC
-AM_PROG_CC_STDC
 AM_PROG_CC_C_O
 
 # option to specify python interpreter to use; this just sets $PYTHON, so that
@@ -227,15 +226,19 @@ INTROSPECTION_COMPILER=`$PKG_CONFIG --variable=g_ir_compiler gobject-introspecti
 AC_SUBST(INTROSPECTION_SCANNER)
 AC_SUBST(INTROSPECTION_COMPILER)
 
-dnl add required cflags ...
+# compiler warnings, errors, required cflags, and code coverage support
+GNOME_COMPILE_WARNINGS([maximum])
+AC_MSG_CHECKING(for Gnome code coverage support)
+m4_ifdef([GNOME_CODE_COVERAGE],
+         [AC_MSG_RESULT(yes)
+          GNOME_CODE_COVERAGE],
+         [AC_MSG_RESULT(no)
+          GNOME_CODE_COVERAGE_RULES=''
+          AC_SUBST([GNOME_CODE_COVERAGE_RULES])
+          enable_code_coverage="no"])
+
 if test "x$GCC" = "xyes"; then
   JH_ADD_CFLAG([-Wall])
-  #JH_ADD_CFLAG([-Werror=missing-prototypes])
-  JH_ADD_CFLAG([-Werror=implicit-function-declaration])
-  JH_ADD_CFLAG([-Werror=pointer-arith])
-  JH_ADD_CFLAG([-Werror=format-security])
-  JH_ADD_CFLAG([-Werror=missing-include-dirs])
-  JH_ADD_CFLAG([-Werror=format])
   JH_ADD_CFLAG([-Werror=unused-variable])
   JH_ADD_CFLAG([-fno-strict-aliasing])
 
@@ -249,9 +252,7 @@ if test "x$GCC" = "xyes"; then
 
 fi
 
-# enable code coverage support
-GNOME_CODE_COVERAGE
-CFLAGS="$CFLAGS $CODE_COVERAGE_CFLAGS"
+CFLAGS="$CFLAGS $WARN_CFLAGS $CODE_COVERAGE_CFLAGS"
 LDFLAGS="$LDFLAGS $CODE_COVERAGE_CFLAGS"
 
 AC_CONFIG_FILES(

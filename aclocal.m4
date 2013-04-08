@@ -114,29 +114,6 @@ AC_PREREQ([2.50])dnl
 am_aux_dir=`cd $ac_aux_dir && pwd`
 ])
 
-
-# Copyright (C) 1996, 1997, 1999, 2000, 2001, 2002, 2003, 2005
-# Free Software Foundation, Inc.
-#
-# This file is free software; the Free Software Foundation
-# gives unlimited permission to copy and/or distribute it,
-# with or without modifications, as long as this notice is preserved.
-
-# serial 4
-
-# This was merged into AC_PROG_CC in Autoconf.
-
-AU_DEFUN([AM_PROG_CC_STDC],
-[AC_PROG_CC
-AC_DIAGNOSE([obsolete], [$0:
-	your code should no longer depend upon `am_cv_prog_cc_stdc', but upon
-	`ac_cv_prog_cc_stdc'.  Remove this warning and the assignment when
-	you adjust the code.  You can also remove the above call to
-	AC_PROG_CC if you already called it elsewhere.])
-am_cv_prog_cc_stdc=$ac_cv_prog_cc_stdc
-])
-AU_DEFUN([fp_PROG_CC_STDC])
-
 # AM_CONDITIONAL                                            -*- Autoconf -*-
 
 # Copyright (C) 1997, 2000, 2001, 2003, 2004, 2005, 2006, 2008
@@ -438,18 +415,6 @@ AC_DEFUN([AM_OUTPUT_DEPENDENCY_COMMANDS],
      [test x"$AMDEP_TRUE" != x"" || _AM_OUTPUT_DEPENDENCY_COMMANDS],
      [AMDEP_TRUE="$AMDEP_TRUE" ac_aux_dir="$ac_aux_dir"])
 ])
-
-# Copyright (C) 1996, 1997, 2000, 2001, 2003, 2005
-# Free Software Foundation, Inc.
-#
-# This file is free software; the Free Software Foundation
-# gives unlimited permission to copy and/or distribute it,
-# with or without modifications, as long as this notice is preserved.
-
-# serial 8
-
-# AM_CONFIG_HEADER is obsolete.  It has been replaced by AC_CONFIG_HEADERS.
-AU_DEFUN([AM_CONFIG_HEADER], [AC_CONFIG_HEADERS($@)])
 
 # Do all the work for Automake.                             -*- Autoconf -*-
 
@@ -1318,164 +1283,6 @@ AC_SUBST([am__tar])
 AC_SUBST([am__untar])
 ]) # _AM_PROG_TAR
 
-dnl GNOME_CODE_COVERAGE
-dnl
-dnl Defines CODE_COVERAGE_CFLAGS and CODE_COVERAGE_LDFLAGS which should be
-dnl included in the CFLAGS and LIBS/LDFLAGS variables of every build target
-dnl (program or library) which should be built with code coverage support.
-dnl Also defines GNOME_CODE_COVERAGE_RULES which should be substituted in your
-dnl Makefile; and $enable_code_coverage which can be used in subsequent
-dnl configure output.
-dnl
-dnl Note that all optimisation flags in CFLAGS must be disabled when code
-dnl coverage is enabled.
-dnl
-dnl Derived from Makefile.decl in GLib, originally licenced under LGPLv2.1+.
-dnl This file is licenced under GPLv3. For the full gnome-common licence
-dnl (GPLv3), see the COPYING file.
-dnl
-dnl Usage example:
-dnl configure.ac:
-dnl    GNOME_CODE_COVERAGE
-dnl
-dnl Makefile.am:
-dnl    @GNOME_CODE_COVERAGE_RULES@
-dnl    my_program_LIBS = … $(CODE_COVERAGE_LDFLAGS) …
-dnl    my_program_CFLAGS = … $(CODE_COVERAGE_CFLAGS) …
-dnl
-dnl This results in a “check-code-coverage” rule being added to any Makefile.am
-dnl which includes “@GNOME_CODE_COVERAGE_RULES@” (assuming the module has been
-dnl configured with --enable-code-coverage). Running `make check-code-coverage`
-dnl in that directory will run the module’s test suite (`make check`) and build
-dnl a code coverage report detailing the code which was touched, then print the
-dnl URI for the report.
-
-AC_DEFUN([GNOME_CODE_COVERAGE],[
-	dnl Check for --enable-code-coverage
-	AC_MSG_CHECKING([whether to build with code coverage support])
-	AC_ARG_ENABLE([code-coverage], AS_HELP_STRING([--enable-code-coverage], [Whether to enable code coverage support]),, enable_code_coverage=no)
-	AM_CONDITIONAL([CODE_COVERAGE_ENABLED], [test x$enable_code_coverage = xyes])
-	AC_SUBST([CODE_COVERAGE_ENABLED], [$enable_code_coverage])
-	AC_MSG_RESULT($enable_code_coverage)
-
-	AS_IF([ test "$enable_code_coverage" = "yes" ], [
-		dnl Check if gcc is being used
-		AS_IF([ test "$GCC" = "no" ], [
-			AC_MSG_ERROR([not compiling with gcc, which is required for gcov code coverage])
-		])
-
-		# List of supported lcov versions.
-		lcov_version_list="1.6 1.7 1.8 1.9"
-
-		AC_CHECK_PROG([LCOV], [lcov], [lcov])
-		AC_CHECK_PROG([GENHTML], [genhtml], [genhtml])
-
-		AS_IF([ test "$LCOV" ], [
-			AC_CACHE_CHECK([for lcov version], gnome_cv_lcov_version, [
-				gnome_cv_lcov_version=invalid
-				lcov_version=`$LCOV -v 2>/dev/null | $SED -e 's/^.* //'`
-				for lcov_check_version in $lcov_version_list; do
-					if test "$lcov_version" = "$lcov_check_version"; then
-						gnome_cv_lcov_version="$lcov_check_version (ok)"
-					fi
-				done
-			])
-		], [
-			lcov_msg="To enable code coverage reporting you must have one of the following lcov versions installed: $lcov_version_list"
-			AC_MSG_ERROR([$lcov_msg])
-		])
-
-		case $gnome_cv_lcov_version in
-			""|invalid[)]
-				lcov_msg="You must have one of the following versions of lcov: $lcov_version_list (found: $lcov_version)."
-				AC_MSG_ERROR([$lcov_msg])
-				LCOV="exit 0;"
-			;;
-		esac
-
-		AS_IF([ test -z "$GENHTML" ], [
-			AC_MSG_ERROR([Could not find genhtml from the lcov package])
-		])
-
-		dnl Build the code coverage flags
-		CODE_COVERAGE_CFLAGS="-O0 -g -fprofile-arcs -ftest-coverage"
-		CODE_COVERAGE_LDFLAGS="-lgcov"
-
-		AC_SUBST([CODE_COVERAGE_CFLAGS])
-		AC_SUBST([CODE_COVERAGE_LDFLAGS])
-	])
-
-GNOME_CODE_COVERAGE_RULES='
-# Code coverage
-#
-# Optional:
-#  - CODE_COVERAGE_DIRECTORY: Top-level directory for code coverage reporting.
-#    (Default: $(top_builddir))
-#  - CODE_COVERAGE_OUTPUT_FILE: Filename and path for the .info file generated
-#    by lcov for code coverage. (Default:
-#    $(PACKAGE_NAME)-$(PACKAGE_VERSION)-coverage.info)
-#  - CODE_COVERAGE_OUTPUT_DIRECTORY: Directory for generated code coverage
-#    reports to be created. (Default:
-#    $(PACKAGE_NAME)-$(PACKAGE_VERSION)-coverage)
-#  - CODE_COVERAGE_LCOV_OPTIONS: Extra options to pass to the lcov instance.
-#    (Default: empty)
-#  - CODE_COVERAGE_GENHTML_OPTIONS: Extra options to pass to the genhtml
-#    instance. (Default: empty)
-#
-# The generated report will be titled using the $(PACKAGE_NAME) and
-# $(PACKAGE_VERSION). In order to add the current git hash to the title,
-# use the git-version-gen script, available online.
-
-# Optional variables
-CODE_COVERAGE_DIRECTORY ?= $(top_builddir)
-CODE_COVERAGE_OUTPUT_FILE ?= $(PACKAGE_NAME)-$(PACKAGE_VERSION)-coverage.info
-CODE_COVERAGE_OUTPUT_DIRECTORY ?= $(PACKAGE_NAME)-$(PACKAGE_VERSION)-coverage
-CODE_COVERAGE_LCOV_OPTIONS ?=
-CODE_COVERAGE_GENHTML_OPTIONS ?=
-
-# Use recursive makes in order to ignore errors during check
-check-code-coverage:
-ifdef CODE_COVERAGE_ENABLED
-	-$(MAKE) $(AM_MAKEFLAGS) -k check
-	$(MAKE) $(AM_MAKEFLAGS) code-coverage-capture
-else
-	@echo "Need to reconfigure with --enable-code-coverage"
-endif
-
-# Capture code coverage data
-code-coverage-capture: code-coverage-capture-hook
-ifdef CODE_COVERAGE_ENABLED
-	$(LCOV) --directory $(CODE_COVERAGE_DIRECTORY) --capture --output-file "$(CODE_COVERAGE_OUTPUT_FILE).tmp" --test-name "$(PACKAGE_NAME)-$(PACKAGE_VERSION)" --no-checksum --compat-libtool $(CODE_COVERAGE_LCOV_OPTIONS)
-	$(LCOV) --directory $(CODE_COVERAGE_DIRECTORY) --remove "$(CODE_COVERAGE_OUTPUT_FILE).tmp" "/tmp/*" --output-file "$(CODE_COVERAGE_OUTPUT_FILE)"
-	-rm -f $(CODE_COVERAGE_OUTPUT_FILE).tmp
-	LANG=C $(GENHTML) --prefix $(CODE_COVERAGE_DIRECTORY) --output-directory "$(CODE_COVERAGE_OUTPUT_DIRECTORY)" --title "$(PACKAGE_NAME)-$(PACKAGE_VERSION) Code Coverage" --legend --show-details "$(CODE_COVERAGE_OUTPUT_FILE)" $(CODE_COVERAGE_GENHTML_OPTIONS)
-	@echo "file://$(abs_builddir)/$(CODE_COVERAGE_OUTPUT_DIRECTORY)/index.html"
-else
-	@echo "Need to reconfigure with --enable-code-coverage"
-endif
-
-# Hook rule executed before code-coverage-capture, overridable by the user
-code-coverage-capture-hook:
-
-clean: code-coverage-clean
-code-coverage-clean:
-	-$(LCOV) --directory $(top_builddir) -z
-	-rm -rf $(CODE_COVERAGE_OUTPUT_FILE) $(CODE_COVERAGE_OUTPUT_FILE).tmp $(CODE_COVERAGE_OUTPUT_DIRECTORY)
-	-find . -name "*.gcda" -o -name "*.gcov" -delete
-
-GITIGNOREFILES ?=
-GITIGNOREFILES += $(CODE_COVERAGE_OUTPUT_FILE) $(CODE_COVERAGE_OUTPUT_DIRECTORY)
-
-DISTCHECK_CONFIGURE_FLAGS ?=
-DISTCHECK_CONFIGURE_FLAGS += --disable-code-coverage
-
-.PHONY: check-code-coverage code-coverage-capture code-coverage-capture-hook code-coverage-clean
-'
-
-	AC_SUBST([GNOME_CODE_COVERAGE_RULES])
-	m4_ifdef([_AM_SUBST_NOTMAKE], [_AM_SUBST_NOTMAKE([GNOME_CODE_COVERAGE_RULES])])
-])
-
 # pkg.m4 - Macros to locate and utilise pkg-config.            -*- Autoconf -*-
 # serial 1 (pkg-config-0.24)
 # 
@@ -1849,6 +1656,335 @@ main ()
   AC_SUBST(GLIB_MKENUMS)
   AC_SUBST(GLIB_COMPILE_RESOURCES)
   rm -f conf.glibtest
+])
+
+dnl GNOME_CODE_COVERAGE
+dnl
+dnl Defines CODE_COVERAGE_CFLAGS and CODE_COVERAGE_LDFLAGS which should be
+dnl included in the CFLAGS and LIBS/LDFLAGS variables of every build target
+dnl (program or library) which should be built with code coverage support.
+dnl Also defines GNOME_CODE_COVERAGE_RULES which should be substituted in your
+dnl Makefile; and $enable_code_coverage which can be used in subsequent
+dnl configure output.
+dnl
+dnl Note that all optimisation flags in CFLAGS must be disabled when code
+dnl coverage is enabled.
+dnl
+dnl Derived from Makefile.decl in GLib, originally licenced under LGPLv2.1+.
+dnl This file is licenced under LGPLv2.1+.
+dnl
+dnl Usage example:
+dnl configure.ac:
+dnl    GNOME_CODE_COVERAGE
+dnl
+dnl Makefile.am:
+dnl    @GNOME_CODE_COVERAGE_RULES@
+dnl    my_program_LIBS = … $(CODE_COVERAGE_LDFLAGS) …
+dnl    my_program_CFLAGS = … $(CODE_COVERAGE_CFLAGS) …
+dnl
+dnl This results in a “check-code-coverage” rule being added to any Makefile.am
+dnl which includes “@GNOME_CODE_COVERAGE_RULES@” (assuming the module has been
+dnl configured with --enable-code-coverage). Running `make check-code-coverage`
+dnl in that directory will run the module’s test suite (`make check`) and build
+dnl a code coverage report detailing the code which was touched, then print the
+dnl URI for the report.
+
+AC_DEFUN([GNOME_CODE_COVERAGE],[
+	dnl Check for --enable-code-coverage
+	AC_MSG_CHECKING([whether to build with code coverage support])
+	AC_ARG_ENABLE([code-coverage], AS_HELP_STRING([--enable-code-coverage], [Whether to enable code coverage support]),, enable_code_coverage=no)
+	AM_CONDITIONAL([CODE_COVERAGE_ENABLED], [test x$enable_code_coverage = xyes])
+	AC_SUBST([CODE_COVERAGE_ENABLED], [$enable_code_coverage])
+	AC_MSG_RESULT($enable_code_coverage)
+
+	AS_IF([ test "$enable_code_coverage" = "yes" ], [
+		dnl Check if gcc is being used
+		AS_IF([ test "$GCC" = "no" ], [
+			AC_MSG_ERROR([not compiling with gcc, which is required for gcov code coverage])
+		])
+
+		# List of supported lcov versions.
+		lcov_version_list="1.6 1.7 1.8 1.9"
+
+		AC_CHECK_PROG([LCOV], [lcov], [lcov])
+		AC_CHECK_PROG([GENHTML], [genhtml], [genhtml])
+
+		AS_IF([ test "$LCOV" ], [
+			AC_CACHE_CHECK([for lcov version], gnome_cv_lcov_version, [
+				gnome_cv_lcov_version=invalid
+				lcov_version=`$LCOV -v 2>/dev/null | $SED -e 's/^.* //'`
+				for lcov_check_version in $lcov_version_list; do
+					if test "$lcov_version" = "$lcov_check_version"; then
+						gnome_cv_lcov_version="$lcov_check_version (ok)"
+					fi
+				done
+			])
+		], [
+			lcov_msg="To enable code coverage reporting you must have one of the following lcov versions installed: $lcov_version_list"
+			AC_MSG_ERROR([$lcov_msg])
+		])
+
+		case $gnome_cv_lcov_version in
+			""|invalid[)]
+				lcov_msg="You must have one of the following versions of lcov: $lcov_version_list (found: $lcov_version)."
+				AC_MSG_ERROR([$lcov_msg])
+				LCOV="exit 0;"
+			;;
+		esac
+
+		AS_IF([ test -z "$GENHTML" ], [
+			AC_MSG_ERROR([Could not find genhtml from the lcov package])
+		])
+
+		dnl Build the code coverage flags
+		CODE_COVERAGE_CFLAGS="-O0 -g -fprofile-arcs -ftest-coverage"
+		CODE_COVERAGE_LDFLAGS="-lgcov"
+
+		AC_SUBST([CODE_COVERAGE_CFLAGS])
+		AC_SUBST([CODE_COVERAGE_LDFLAGS])
+	])
+
+GNOME_CODE_COVERAGE_RULES='
+# Code coverage
+#
+# Optional:
+#  - CODE_COVERAGE_DIRECTORY: Top-level directory for code coverage reporting.
+#    (Default: $(top_builddir))
+#  - CODE_COVERAGE_OUTPUT_FILE: Filename and path for the .info file generated
+#    by lcov for code coverage. (Default:
+#    $(PACKAGE_NAME)-$(PACKAGE_VERSION)-coverage.info)
+#  - CODE_COVERAGE_OUTPUT_DIRECTORY: Directory for generated code coverage
+#    reports to be created. (Default:
+#    $(PACKAGE_NAME)-$(PACKAGE_VERSION)-coverage)
+#  - CODE_COVERAGE_LCOV_OPTIONS: Extra options to pass to the lcov instance.
+#    (Default: empty)
+#  - CODE_COVERAGE_GENHTML_OPTIONS: Extra options to pass to the genhtml
+#    instance. (Default: empty)
+#  - CODE_COVERAGE_IGNORE_PATTERN: Extra glob pattern of files to ignore
+#
+# The generated report will be titled using the $(PACKAGE_NAME) and
+# $(PACKAGE_VERSION). In order to add the current git hash to the title,
+# use the git-version-gen script, available online.
+
+# Optional variables
+CODE_COVERAGE_DIRECTORY ?= $(top_builddir)
+CODE_COVERAGE_OUTPUT_FILE ?= $(PACKAGE_NAME)-$(PACKAGE_VERSION)-coverage.info
+CODE_COVERAGE_OUTPUT_DIRECTORY ?= $(PACKAGE_NAME)-$(PACKAGE_VERSION)-coverage
+CODE_COVERAGE_LCOV_OPTIONS ?=
+CODE_COVERAGE_GENHTML_OPTIONS ?=
+CODE_COVERAGE_IGNORE_PATTERN ?=
+
+code_coverage_quiet = $(code_coverage_quiet_$(V))
+code_coverage_quiet_ = $(code_coverage_quiet_$(AM_DEFAULT_VERBOSITY))
+code_coverage_quiet_0 = --quiet
+
+# Use recursive makes in order to ignore errors during check
+check-code-coverage:
+ifdef CODE_COVERAGE_ENABLED
+	-$(MAKE) $(AM_MAKEFLAGS) -k check
+	$(MAKE) $(AM_MAKEFLAGS) code-coverage-capture
+else
+	@echo "Need to reconfigure with --enable-code-coverage"
+endif
+
+# Capture code coverage data
+code-coverage-capture: code-coverage-capture-hook
+ifdef CODE_COVERAGE_ENABLED
+	$(LCOV) $(code_coverage_quiet) --directory $(CODE_COVERAGE_DIRECTORY) --capture --output-file "$(CODE_COVERAGE_OUTPUT_FILE).tmp" --test-name "$(PACKAGE_NAME)-$(PACKAGE_VERSION)" --no-checksum --compat-libtool $(CODE_COVERAGE_LCOV_OPTIONS)
+	$(LCOV) $(code_coverage_quiet) --directory $(CODE_COVERAGE_DIRECTORY) --remove "$(CODE_COVERAGE_OUTPUT_FILE).tmp" "/tmp/*" $(CODE_COVERAGE_IGNORE_PATTERN) --output-file "$(CODE_COVERAGE_OUTPUT_FILE)"
+	-@rm -f $(CODE_COVERAGE_OUTPUT_FILE).tmp
+	LANG=C $(GENHTML) $(code_coverage_quiet) --prefix $(CODE_COVERAGE_DIRECTORY) --output-directory "$(CODE_COVERAGE_OUTPUT_DIRECTORY)" --title "$(PACKAGE_NAME)-$(PACKAGE_VERSION) Code Coverage" --legend --show-details "$(CODE_COVERAGE_OUTPUT_FILE)" $(CODE_COVERAGE_GENHTML_OPTIONS)
+	@echo "file://$(abs_builddir)/$(CODE_COVERAGE_OUTPUT_DIRECTORY)/index.html"
+else
+	@echo "Need to reconfigure with --enable-code-coverage"
+endif
+
+# Hook rule executed before code-coverage-capture, overridable by the user
+code-coverage-capture-hook:
+
+clean: code-coverage-clean
+code-coverage-clean:
+	-$(LCOV) --directory $(top_builddir) -z
+	-rm -rf $(CODE_COVERAGE_OUTPUT_FILE) $(CODE_COVERAGE_OUTPUT_FILE).tmp $(CODE_COVERAGE_OUTPUT_DIRECTORY)
+	-find . -name "*.gcda" -o -name "*.gcov" -delete
+
+GITIGNOREFILES ?=
+GITIGNOREFILES += $(CODE_COVERAGE_OUTPUT_FILE) $(CODE_COVERAGE_OUTPUT_DIRECTORY)
+
+DISTCHECK_CONFIGURE_FLAGS ?=
+DISTCHECK_CONFIGURE_FLAGS += --disable-code-coverage
+
+.PHONY: check-code-coverage code-coverage-capture code-coverage-capture-hook code-coverage-clean
+'
+
+	AC_SUBST([GNOME_CODE_COVERAGE_RULES])
+	m4_ifdef([_AM_SUBST_NOTMAKE], [_AM_SUBST_NOTMAKE([GNOME_CODE_COVERAGE_RULES])])
+])
+
+dnl GNOME_COMPILE_WARNINGS
+dnl Turn on many useful compiler warnings and substitute the result into
+dnl WARN_CFLAGS
+dnl For now, only works on GCC
+AC_DEFUN([GNOME_COMPILE_WARNINGS],[
+    dnl ******************************
+    dnl More compiler warnings
+    dnl ******************************
+
+    AC_ARG_ENABLE(compile-warnings, 
+                  AC_HELP_STRING([--enable-compile-warnings=@<:@no/minimum/yes/maximum/error@:>@],
+                                 [Turn on compiler warnings]),,
+                  [enable_compile_warnings="m4_default([$1],[yes])"])
+
+    if test "x$GCC" != xyes; then
+	enable_compile_warnings=no
+    fi
+
+    warning_flags=
+    realsave_CFLAGS="$CFLAGS"
+
+    dnl These are warning flags that aren't marked as fatal.  Can be
+    dnl overridden on a per-project basis with -Wno-foo.
+    base_warn_flags=" \
+        -Wall \
+        -Wstrict-prototypes \
+        -Wnested-externs \
+    "
+
+    dnl These compiler flags typically indicate very broken or suspicious
+    dnl code.  Some of them such as implicit-function-declaration are
+    dnl just not default because gcc compiles a lot of legacy code.
+    dnl We choose to make this set into explicit errors.
+    base_error_flags=" \
+        -Werror=missing-prototypes \
+        -Werror=implicit-function-declaration \
+        -Werror=pointer-arith \
+        -Werror=init-self \
+        -Werror=format-security \
+        -Werror=format=2 \
+        -Werror=missing-include-dirs \
+    "
+
+    case "$enable_compile_warnings" in
+    no)
+        warning_flags=
+        ;;
+    minimum)
+        warning_flags="-Wall"
+        ;;
+    yes)
+        warning_flags="$base_warn_flags $base_error_flags"
+        ;;
+    maximum|error)
+        warning_flags="$base_warn_flags $base_error_flags"
+        ;;
+    *)
+        AC_MSG_ERROR(Unknown argument '$enable_compile_warnings' to --enable-compile-warnings)
+        ;;
+    esac
+
+    if test "$enable_compile_warnings" = "error" ; then
+        warning_flags="$warning_flags -Werror"
+    fi
+
+    dnl Check whether GCC supports the warning options
+    for option in $warning_flags; do
+	save_CFLAGS="$CFLAGS"
+	CFLAGS="$CFLAGS $option"
+	AC_MSG_CHECKING([whether gcc understands $option])
+	AC_TRY_COMPILE([], [],
+	    has_option=yes,
+	    has_option=no,)
+	CFLAGS="$save_CFLAGS"
+	AC_MSG_RESULT([$has_option])
+	if test $has_option = yes; then
+	    tested_warning_flags="$tested_warning_flags $option"
+	fi
+	unset has_option
+	unset save_CFLAGS
+    done
+    unset option
+    CFLAGS="$realsave_CFLAGS"
+    AC_MSG_CHECKING(what warning flags to pass to the C compiler)
+    AC_MSG_RESULT($tested_warning_flags)
+
+    AC_ARG_ENABLE(iso-c,
+                  AC_HELP_STRING([--enable-iso-c],
+                                 [Try to warn if code is not ISO C ]),,
+                  [enable_iso_c=no])
+
+    AC_MSG_CHECKING(what language compliance flags to pass to the C compiler)
+    complCFLAGS=
+    if test "x$enable_iso_c" != "xno"; then
+	if test "x$GCC" = "xyes"; then
+	case " $CFLAGS " in
+	    *[\ \	]-ansi[\ \	]*) ;;
+	    *) complCFLAGS="$complCFLAGS -ansi" ;;
+	esac
+	case " $CFLAGS " in
+	    *[\ \	]-pedantic[\ \	]*) ;;
+	    *) complCFLAGS="$complCFLAGS -pedantic" ;;
+	esac
+	fi
+    fi
+    AC_MSG_RESULT($complCFLAGS)
+
+    WARN_CFLAGS="$tested_warning_flags $complCFLAGS"
+    AC_SUBST(WARN_CFLAGS)
+])
+
+dnl For C++, do basically the same thing.
+
+AC_DEFUN([GNOME_CXX_WARNINGS],[
+  AC_ARG_ENABLE(cxx-warnings,
+                AC_HELP_STRING([--enable-cxx-warnings=@<:@no/minimum/yes@:>@]
+                               [Turn on compiler warnings.]),,
+                [enable_cxx_warnings="m4_default([$1],[minimum])"])
+
+  AC_MSG_CHECKING(what warning flags to pass to the C++ compiler)
+  warnCXXFLAGS=
+  if test "x$GXX" != xyes; then
+    enable_cxx_warnings=no
+  fi
+  if test "x$enable_cxx_warnings" != "xno"; then
+    if test "x$GXX" = "xyes"; then
+      case " $CXXFLAGS " in
+      *[\ \	]-Wall[\ \	]*) ;;
+      *) warnCXXFLAGS="-Wall -Wno-unused" ;;
+      esac
+
+      ## -W is not all that useful.  And it cannot be controlled
+      ## with individual -Wno-xxx flags, unlike -Wall
+      if test "x$enable_cxx_warnings" = "xyes"; then
+	warnCXXFLAGS="$warnCXXFLAGS -Wshadow -Woverloaded-virtual"
+      fi
+    fi
+  fi
+  AC_MSG_RESULT($warnCXXFLAGS)
+
+   AC_ARG_ENABLE(iso-cxx,
+                 AC_HELP_STRING([--enable-iso-cxx],
+                                [Try to warn if code is not ISO C++ ]),,
+                 [enable_iso_cxx=no])
+
+   AC_MSG_CHECKING(what language compliance flags to pass to the C++ compiler)
+   complCXXFLAGS=
+   if test "x$enable_iso_cxx" != "xno"; then
+     if test "x$GXX" = "xyes"; then
+      case " $CXXFLAGS " in
+      *[\ \	]-ansi[\ \	]*) ;;
+      *) complCXXFLAGS="$complCXXFLAGS -ansi" ;;
+      esac
+
+      case " $CXXFLAGS " in
+      *[\ \	]-pedantic[\ \	]*) ;;
+      *) complCXXFLAGS="$complCXXFLAGS -pedantic" ;;
+      esac
+     fi
+   fi
+  AC_MSG_RESULT($complCXXFLAGS)
+
+  WARN_CXXFLAGS="$CXXFLAGS $warnCXXFLAGS $complCXXFLAGS"
+  AC_SUBST(WARN_CXXFLAGS)
 ])
 
 m4_include([m4/as-ac-expand.m4])

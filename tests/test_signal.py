@@ -120,7 +120,9 @@ class Foo(GObject.GObject):
         'my-acc-signal': (GObject.SignalFlags.RUN_LAST, GObject.TYPE_INT,
                           (), my_accumulator, "accum data"),
         'my-other-acc-signal': (GObject.SignalFlags.RUN_LAST, GObject.TYPE_BOOLEAN,
-                                (), GObject.signal_accumulator_true_handled)
+                                (), GObject.signal_accumulator_true_handled),
+        'my-acc-first-wins': (GObject.SignalFlags.RUN_LAST, GObject.TYPE_BOOLEAN,
+                              (), GObject.signal_accumulator_first_wins)
         }
 
 
@@ -148,6 +150,16 @@ class TestAccumulator(unittest.TestCase):
         inst.emit("my-other-acc-signal")
         self.assertEqual(self.__true_val, 2)
 
+    def test_accumulator_first_wins(self):
+        # First signal hit will always win
+        inst = Foo()
+        inst.connect("my-acc-first-wins", self._true_handler3)
+        inst.connect("my-acc-first-wins", self._true_handler1)
+        inst.connect("my-acc-first-wins", self._true_handler2)
+        self.__true_val = None
+        inst.emit("my-acc-first-wins")
+        self.assertEqual(self.__true_val, 3)
+
     def _true_handler1(self, obj):
         self.__true_val = 1
         return False
@@ -164,6 +176,9 @@ class TestAccumulator(unittest.TestCase):
 class E(GObject.GObject):
     __gsignals__ = {'signal': (GObject.SignalFlags.RUN_FIRST, None,
                                ())}
+
+    # Property used to test detailed signal
+    prop = GObject.Property(type=int, default=0)
 
     def __init__(self):
         GObject.GObject.__init__(self)
@@ -254,19 +269,145 @@ class TestEmissionHook(unittest.TestCase):
         self.assertEqual(obj.status, 3)
 
 
+class TestMatching(unittest.TestCase):
+    class Object(GObject.Object):
+        status = 0
+        prop = GObject.Property(type=int, default=0)
+
+        @GObject.Signal()
+        def my_signal(self):
+            pass
+
+    @unittest.expectedFailure  # https://bugzilla.gnome.org/show_bug.cgi?id=692918
+    def test_signal_handler_block_matching(self):
+        def dummy(*args):
+            "Hack to work around: "
+
+        def foo(obj):
+            obj.status += 1
+
+        obj = self.Object()
+        handler_id = GObject.signal_connect_closure(obj, 'my-signal', foo, after=False)
+        handler_id
+
+        self.assertEqual(obj.status, 0)
+        obj.emit('my-signal')
+        self.assertEqual(obj.status, 1)
+
+        # Blocking by match criteria disables the foo callback
+        signal_id, detail = GObject.signal_parse_name('my-signal', obj, True)
+        count = GObject.signal_handlers_block_matched(obj,
+                                                      GObject.SignalMatchType.ID | GObject.SignalMatchType.CLOSURE,
+                                                      signal_id=signal_id, detail=detail,
+                                                      closure=foo, func=dummy, data=dummy)
+        self.assertEqual(count, 1)
+        obj.emit('my-signal')
+        self.assertEqual(obj.status, 1)
+
+        # Unblocking by the same match criteria allows callback to work again
+        count = GObject.signal_handlers_unblock_matched(obj,
+                                                        GObject.SignalMatchType.ID | GObject.SignalMatchType.CLOSURE,
+                                                        signal_id=signal_id, detail=detail,
+                                                        closure=foo, func=dummy, data=dummy)
+        self.assertEqual(count, 1)
+        obj.emit('my-signal')
+        self.assertEqual(obj.status, 2)
+
+        # Disconnecting by match criteria completely removes the handler
+        count = GObject.signal_handlers_disconnect_matched(obj,
+                                                           GObject.SignalMatchType.ID | GObject.SignalMatchType.CLOSURE,
+                                                           signal_id=signal_id, detail=detail,
+                                                           closure=foo, func=dummy, data=dummy)
+        self.assertEqual(count, 1)
+        obj.emit('my-signal')
+        self.assertEqual(obj.status, 2)
+
+    def test_signal_handler_find(self):
+        def dummy(*args):
+            "Hack to work around: "
+
+        def foo(obj):
+            obj.status += 1
+
+        obj = self.Object()
+        handler_id = GObject.signal_connect_closure(obj, 'my-signal', foo, after=False)
+
+        signal_id, detail = GObject.signal_parse_name('my-signal', obj, True)
+        found_id = GObject.signal_handler_find(obj,
+                                               GObject.SignalMatchType.ID,
+                                               signal_id=signal_id, detail=detail,
+                                               closure=None, func=dummy, data=dummy)
+        self.assertEqual(handler_id, found_id)
+
+
 class TestClosures(unittest.TestCase):
     def setUp(self):
         self.count = 0
+        self.emission_stopped = False
+        self.emission_error = False
+        self.handler_pending = False
+
+    def _callback_handler_pending(self, e):
+        signal_id, detail = GObject.signal_parse_name('signal', e, True)
+        self.handler_pending = GObject.signal_has_handler_pending(e, signal_id, detail,
+                                                                  may_be_blocked=False)
 
     def _callback(self, e):
         self.count += 1
 
-    def test_disconnect(self):
+    def _callback_stop_emission(self, obj, prop, stop_it):
+        if stop_it:
+            obj.stop_emission_by_name('notify::prop')
+            self.emission_stopped = True
+        else:
+            self.count += 1
+
+    def _callback_invalid_stop_emission_name(self, obj, prop):
+        # We expect a GLib warning but there currently is no way to test that
+        # This can at least make sure we don't crash
+        old_mask = GLib.log_set_always_fatal(GLib.LogLevelFlags.LEVEL_CRITICAL |
+                                             GLib.LogLevelFlags.LEVEL_ERROR)
+        try:
+            obj.stop_emission_by_name('notasignal::baddetail')
+        finally:
+            GLib.log_set_always_fatal(old_mask)
+            self.emission_error = True
+
+    def test_disconnect_by_func(self):
         e = E()
         e.connect('signal', self._callback)
         e.disconnect_by_func(self._callback)
         e.emit('signal')
         self.assertEqual(self.count, 0)
+
+    def test_disconnect(self):
+        e = E()
+        handler_id = e.connect('signal', self._callback)
+        self.assertTrue(e.handler_is_connected(handler_id))
+        e.disconnect(handler_id)
+        e.emit('signal')
+        self.assertEqual(self.count, 0)
+        self.assertFalse(e.handler_is_connected(handler_id))
+
+    def test_stop_emission_by_name(self):
+        e = E()
+
+        # Sandwich a callback that stops emission in between a callback that increments
+        e.connect('notify::prop', self._callback_stop_emission, False)
+        e.connect('notify::prop', self._callback_stop_emission, True)
+        e.connect('notify::prop', self._callback_stop_emission, False)
+
+        e.set_property('prop', 1234)
+        self.assertEqual(e.get_property('prop'), 1234)
+        self.assertEqual(self.count, 1)
+        self.assertTrue(self.emission_stopped)
+
+    def test_stop_emission_by_name_error(self):
+        e = E()
+
+        e.connect('notify::prop', self._callback_invalid_stop_emission_name)
+        e.set_property('prop', 1234)
+        self.assertTrue(self.emission_error)
 
     def test_handler_block(self):
         e = E()
@@ -277,8 +418,8 @@ class TestClosures(unittest.TestCase):
 
     def test_handler_unblock(self):
         e = E()
-        signal_id = e.connect('signal', self._callback)
-        e.handler_block(signal_id)
+        handler_id = e.connect('signal', self._callback)
+        e.handler_block(handler_id)
         e.handler_unblock_by_func(self._callback)
         e.emit('signal')
         self.assertEqual(self.count, 1)
@@ -316,6 +457,32 @@ class TestClosures(unittest.TestCase):
         c = C(self)
         data = c.emit("my_signal", "\01\00\02")
         self.assertEqual(data, "\02\00\01")
+
+    def test_handler_pending(self):
+        obj = F()
+        obj.connect('signal', self._callback_handler_pending)
+        obj.connect('signal', self._callback)
+
+        self.assertEqual(self.count, 0)
+        self.assertEqual(self.handler_pending, False)
+
+        obj.emit('signal')
+        self.assertEqual(self.count, 1)
+        self.assertEqual(self.handler_pending, True)
+
+    def test_signal_handlers_destroy(self):
+        obj = F()
+        obj.connect('signal', self._callback)
+        obj.connect('signal', self._callback)
+        obj.connect('signal', self._callback)
+
+        obj.emit('signal')
+        self.assertEqual(self.count, 3)
+
+        # count should remain at 3 after all handlers are destroyed
+        GObject.signal_handlers_destroy(obj)
+        obj.emit('signal')
+        self.assertEqual(self.count, 3)
 
 
 class SigPropClass(GObject.GObject):
@@ -362,6 +529,7 @@ class CM(GObject.GObject):
         test_string=(GObject.SignalFlags.RUN_LAST, str, (str,)),
         test_object=(GObject.SignalFlags.RUN_LAST, object, (object,)),
         test_paramspec=(GObject.SignalFlags.RUN_LAST, GObject.ParamSpec, ()),
+        test_paramspec_in=(GObject.SignalFlags.RUN_LAST, GObject.ParamSpec, (GObject.ParamSpec, )),
         test_gvalue=(GObject.SignalFlags.RUN_LAST, GObject.Value, (GObject.Value,)),
         test_gvalue_ret=(GObject.SignalFlags.RUN_LAST, GObject.Value, (GObject.TYPE_GTYPE,)),
     )
@@ -418,6 +586,17 @@ class _TestCMarshaller:
         self.assertEqual(rv.name, "test-param")
         self.assertEqual(rv.nick, "test")
 
+    @unittest.skipUnless(hasattr(GObject, 'param_spec_boolean'),
+                         'too old gobject-introspection')
+    def test_paramspec_in(self):
+        rv = GObject.param_spec_boolean('mybool', 'test-bool', 'do something',
+                                        True, GObject.ParamFlags.READABLE)
+
+        rv2 = self.obj.emit("test-paramspec-in", rv)
+        self.assertEqual(type(rv), type(rv2))
+        self.assertEqual(rv2.name, "mybool")
+        self.assertEqual(rv2.nick, "test-bool")
+
     def test_C_paramspec(self):
         self.notify_called = False
 
@@ -436,9 +615,7 @@ class _TestCMarshaller:
         self.assertEqual(rv, 42)
 
         # explicit float
-        v = GObject.Value()
-        v.init(GObject.TYPE_FLOAT)
-        v.set_float(1.234)
+        v = GObject.Value(GObject.TYPE_FLOAT, 1.234)
         rv = self.obj.emit("test-gvalue", v)
         self.assertAlmostEqual(rv, 1.234, 4)
 
@@ -447,9 +624,7 @@ class _TestCMarshaller:
         self.assertAlmostEqual(rv, 1.234, 4)
 
         # explicit int64
-        v = GObject.Value()
-        v.init(GObject.TYPE_INT64)
-        v.set_int64(GObject.G_MAXINT64)
+        v = GObject.Value(GObject.TYPE_INT64, GObject.G_MAXINT64)
         rv = self.obj.emit("test-gvalue", v)
         self.assertEqual(rv, GObject.G_MAXINT64)
 
@@ -459,9 +634,7 @@ class _TestCMarshaller:
         #self.assertEqual(rv, GObject.G_MAXINT64)
 
         # explicit uint64
-        v = GObject.Value()
-        v.init(GObject.TYPE_UINT64)
-        v.set_uint64(GObject.G_MAXUINT64)
+        v = GObject.Value(GObject.TYPE_UINT64, GObject.G_MAXUINT64)
         rv = self.obj.emit("test-gvalue", v)
         self.assertEqual(rv, GObject.G_MAXUINT64)
 
@@ -794,11 +967,9 @@ class TestSignalModuleLevelFunctions(unittest.TestCase):
         my_signal_expected_query_result = [my_signal_id, 'my-signal', C.__gtype__,
                                            1, GObject.TYPE_NONE, (GObject.TYPE_INT,)]
         # signal_query(name, type)
-        self.assertSequenceEqual(GObject.signal_query('my-signal', C),
-                                 my_signal_expected_query_result)
+        self.assertEqual(list(GObject.signal_query('my-signal', C)), my_signal_expected_query_result)
         # signal_query(signal_id)
-        self.assertSequenceEqual(GObject.signal_query(my_signal_id),
-                                 my_signal_expected_query_result)
+        self.assertEqual(list(GObject.signal_query(my_signal_id)), my_signal_expected_query_result)
         # invalid query returns None instead of raising
         self.assertEqual(GObject.signal_query(0), None)
         self.assertEqual(GObject.signal_query('NOT_A_SIGNAL', C),

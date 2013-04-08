@@ -5,7 +5,7 @@ import gc
 import unittest
 import warnings
 
-from gi.repository import GObject
+from gi.repository import GObject, GLib
 from gi import PyGIDeprecationWarning
 from gi.module import get_introspection_module
 from gi._gobject import _gobject
@@ -491,19 +491,27 @@ class TestPropertyBindings(unittest.TestCase):
         self.assertEqual(self.target.int_prop, 1)
 
     def test_transform_bidirectional(self):
+        test_data = object()
+
         def transform_to(binding, value, user_data=None):
-            self.assertEqual(user_data, 'test-data')
+            self.assertEqual(user_data, test_data)
             return value * 2
 
         def transform_from(binding, value, user_data=None):
-            self.assertEqual(user_data, 'test-data')
-            return value / 2
+            self.assertEqual(user_data, test_data)
+            return value // 2
+
+        test_data_ref_count = sys.getrefcount(test_data)
+        transform_to_ref_count = sys.getrefcount(transform_to)
+        transform_from_ref_count = sys.getrefcount(transform_from)
 
         # bidirectional bindings
         binding = self.source.bind_property('int_prop', self.target, 'int_prop',
                                             GObject.BindingFlags.BIDIRECTIONAL,
-                                            transform_to, transform_from, 'test-data')
+                                            transform_to, transform_from, test_data)
         binding = binding  # PyFlakes
+        binding_ref_count = sys.getrefcount(binding())
+        binding_gref_count = binding().__grefcount__
 
         self.source.int_prop = 1
         self.assertEqual(self.source.int_prop, 1)
@@ -512,6 +520,30 @@ class TestPropertyBindings(unittest.TestCase):
         self.target.props.int_prop = 4
         self.assertEqual(self.source.int_prop, 2)
         self.assertEqual(self.target.int_prop, 4)
+
+        self.assertEqual(sys.getrefcount(binding()), binding_ref_count)
+        self.assertEqual(binding().__grefcount__, binding_gref_count)
+
+        # test_data ref count increases by 2, once for each callback.
+        self.assertEqual(sys.getrefcount(test_data), test_data_ref_count + 2)
+        self.assertEqual(sys.getrefcount(transform_to), transform_to_ref_count + 1)
+        self.assertEqual(sys.getrefcount(transform_from), transform_from_ref_count + 1)
+
+        # Unbind should clear out the binding and its transforms
+        binding.unbind()
+        self.assertEqual(binding(), None)
+        del binding
+        gc.collect()
+
+        # Setting source or target should not change the other.
+        self.target.int_prop = 3
+        self.source.int_prop = 5
+        self.assertEqual(self.target.int_prop, 3)
+        self.assertEqual(self.source.int_prop, 5)
+
+        self.assertEqual(sys.getrefcount(test_data), test_data_ref_count)
+        self.assertEqual(sys.getrefcount(transform_to), transform_to_ref_count)
+        self.assertEqual(sys.getrefcount(transform_from), transform_from_ref_count)
 
     def test_explicit_unbind_clears_connection(self):
         self.assertEqual(self.source.int_prop, 0)
@@ -562,6 +594,69 @@ class TestPropertyBindings(unittest.TestCase):
         gc.collect()
         self.assertEqual(ref(), None)
         self.assertEqual(binding(), None)
+
+
+class TestGValue(unittest.TestCase):
+    def test_type_constant(self):
+        self.assertEqual(GObject.TYPE_VALUE, GObject.Value.__gtype__)
+        self.assertEqual(GObject.type_name(GObject.TYPE_VALUE), 'GValue')
+
+    def test_no_type(self):
+        value = GObject.Value()
+        self.assertEqual(value.g_type, GObject.TYPE_INVALID)
+        self.assertRaises(TypeError, value.set_value, 23)
+        self.assertEqual(value.get_value(), None)
+
+    def test_int(self):
+        value = GObject.Value(GObject.TYPE_UINT)
+        self.assertEqual(value.g_type, GObject.TYPE_UINT)
+        value.set_value(23)
+        self.assertEqual(value.get_value(), 23)
+        value.set_value(42.0)
+        self.assertEqual(value.get_value(), 42)
+
+    def test_string(self):
+        value = GObject.Value(str, 'foo_bar')
+        self.assertEqual(value.g_type, GObject.TYPE_STRING)
+        self.assertEqual(value.get_value(), 'foo_bar')
+
+    def test_float(self):
+        # python float is G_TYPE_DOUBLE
+        value = GObject.Value(float, 23.4)
+        self.assertEqual(value.g_type, GObject.TYPE_DOUBLE)
+        value.set_value(1e50)
+        self.assertAlmostEqual(value.get_value(), 1e50)
+
+        value = GObject.Value(GObject.TYPE_FLOAT, 23.4)
+        self.assertEqual(value.g_type, GObject.TYPE_FLOAT)
+        self.assertRaises(TypeError, value.set_value, 'string')
+        self.assertRaises(ValueError, value.set_value, 1e50)
+
+    def test_float_inf_nan(self):
+        nan = float('nan')
+        for type_ in [GObject.TYPE_FLOAT, GObject.TYPE_DOUBLE]:
+            for x in [float('inf'), float('-inf'), nan]:
+                value = GObject.Value(type_, x)
+                # assertEqual() is False for (nan, nan)
+                if x is nan:
+                    self.assertEqual(str(value.get_value()), 'nan')
+                else:
+                    self.assertEqual(value.get_value(), x)
+
+    def test_enum(self):
+        value = GObject.Value(GLib.FileError, GLib.FileError.FAILED)
+        self.assertEqual(value.get_value(), GLib.FileError.FAILED)
+
+    def test_flags(self):
+        value = GObject.Value(GLib.IOFlags, GLib.IOFlags.IS_READABLE)
+        self.assertEqual(value.get_value(), GLib.IOFlags.IS_READABLE)
+
+    def test_object(self):
+        class TestObject(GObject.Object):
+            pass
+        obj = TestObject()
+        value = GObject.Value(GObject.TYPE_OBJECT, obj)
+        self.assertEqual(value.get_value(), obj)
 
 if __name__ == '__main__':
     unittest.main()

@@ -280,6 +280,7 @@ SHELL = @SHELL@
 STRIP = @STRIP@
 THREADING_CFLAGS = @THREADING_CFLAGS@
 VERSION = @VERSION@
+WARN_CFLAGS = @WARN_CFLAGS@
 abs_builddir = @abs_builddir@
 abs_srcdir = @abs_srcdir@
 abs_top_builddir = @abs_top_builddir@
@@ -343,6 +344,8 @@ CLEANFILES = \
 	`find "$(builddir)" -type f -name "*.pyc" -print`
 
 EXTRA_DIST = \
+	autogen.sh \
+	pygobject.doap \
 	pygobject-$(PLATFORM_VERSION).pc.in \
 	PKG-INFO \
 	PKG-INFO.in \

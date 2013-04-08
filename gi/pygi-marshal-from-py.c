@@ -32,7 +32,23 @@
 #include "pygi-marshal-cleanup.h"
 #include "pygi-marshal-from-py.h"
 
-gboolean
+#ifdef _WIN32
+#ifdef _MSC_VER
+#include <math.h>
+
+#ifndef NAN
+static const unsigned long __nan[2] = {0xffffffff, 0x7fffffff};
+#define NAN (*(const float *) __nan)
+#endif
+
+#ifndef INFINITY
+#define INFINITY HUGE_VAL
+#endif
+
+#endif
+#endif
+
+static gboolean
 gi_argument_from_py_ssize_t (GIArgument   *arg_out,
                              Py_ssize_t    size_in,
                              GITypeTag     type_tag)                             
@@ -134,7 +150,7 @@ gi_argument_from_py_ssize_t (GIArgument   *arg_out,
     return FALSE;
 }
 
-gboolean
+static gboolean
 gi_argument_from_c_long (GIArgument *arg_out,
                          long        c_long_in,
                          GITypeTag   type_tag)
@@ -235,7 +251,11 @@ _pygi_marshal_from_py_void (PyGIInvokeState   *state,
 {
     g_warn_if_fail (arg_cache->transfer == GI_TRANSFER_NOTHING);
 
-    arg->v_pointer = py_arg;
+    if (PYGLIB_CPointer_Check(py_arg)) {
+        arg->v_pointer = PYGLIB_CPointer_GetPointer (py_arg, NULL);
+    } else {
+        arg->v_pointer = py_arg;
+    }
 
     return TRUE;
 }
@@ -262,22 +282,30 @@ _pygi_marshal_from_py_int8 (PyGIInvokeState   *state,
     PyObject *py_long;
     long long_;
 
-    if (!PyNumber_Check (py_arg)) {
-        PyErr_Format (PyExc_TypeError, "Must be number, not %s",
+    if (PYGLIB_PyBytes_Check (py_arg)) {
+
+        if (PYGLIB_PyBytes_Size (py_arg) != 1) {
+            PyErr_Format (PyExc_TypeError, "Must be a single character");
+            return FALSE;
+        }
+
+        long_ = (char)(PYGLIB_PyBytes_AsString (py_arg)[0]);
+    } else if (PyNumber_Check (py_arg)) {
+        py_long = PYGLIB_PyNumber_Long (py_arg);
+        if (!py_long)
+            return FALSE;
+
+        long_ = PYGLIB_PyLong_AsLong (py_long);
+        Py_DECREF (py_long);
+
+        if (PyErr_Occurred ()) {
+            PyErr_Clear ();
+            PyErr_Format (PyExc_ValueError, "%ld not in range %d to %d", long_, -128, 127);
+            return FALSE;
+        }
+    } else {
+        PyErr_Format (PyExc_TypeError, "Must be number or single byte string, not %s",
                       py_arg->ob_type->tp_name);
-        return FALSE;
-    }
-
-    py_long = PYGLIB_PyNumber_Long (py_arg);
-    if (!py_long)
-        return FALSE;
-
-    long_ = PYGLIB_PyLong_AsLong (py_long);
-    Py_DECREF (py_long);
-
-    if (PyErr_Occurred ()) {
-        PyErr_Clear ();
-        PyErr_Format (PyExc_ValueError, "%ld not in range %d to %d", long_, -128, 127);
         return FALSE;
     }
 
@@ -651,6 +679,23 @@ _pygi_marshal_from_py_uint64 (PyGIInvokeState   *state,
     return TRUE;
 }
 
+static gboolean
+check_valid_double (double x, double min, double max)
+{
+    char buf[100];
+
+    if ((x < min || x > max) && x != INFINITY && x != -INFINITY && x != NAN) {
+        if (PyErr_Occurred())
+            PyErr_Clear ();
+
+        /* we need this as PyErr_Format() does not support float types */
+        snprintf (buf, sizeof (buf), "%g not in range %g to %g", x, min, max);
+        PyErr_SetString (PyExc_ValueError, buf);
+        return FALSE;
+    }
+    return TRUE;
+}
+
 gboolean
 _pygi_marshal_from_py_float (PyGIInvokeState   *state,
                              PyGICallableCache *callable_cache,
@@ -674,16 +719,8 @@ _pygi_marshal_from_py_float (PyGIInvokeState   *state,
     double_ = PyFloat_AsDouble (py_float);
     Py_DECREF (py_float);
 
-    if (PyErr_Occurred ()) {
-        PyErr_Clear ();
-        PyErr_Format (PyExc_ValueError, "%f not in range %f to %f", double_, -G_MAXFLOAT, G_MAXFLOAT);
+    if (PyErr_Occurred () || !check_valid_double (double_, -G_MAXFLOAT, G_MAXFLOAT))
         return FALSE;
-    }
-
-    if (double_ < -G_MAXFLOAT || double_ > G_MAXFLOAT) {
-        PyErr_Format (PyExc_ValueError, "%f not in range %f to %f", double_, -G_MAXFLOAT, G_MAXFLOAT);
-        return FALSE;
-    }
 
     arg->v_float = double_;
 
@@ -713,16 +750,8 @@ _pygi_marshal_from_py_double (PyGIInvokeState   *state,
     double_ = PyFloat_AsDouble (py_float);
     Py_DECREF (py_float);
 
-    if (PyErr_Occurred ()) {
-        PyErr_Clear ();
-        PyErr_Format (PyExc_ValueError, "%f not in range %f to %f", double_, -G_MAXDOUBLE, G_MAXDOUBLE);
+    if (PyErr_Occurred () || !check_valid_double (double_, -G_MAXDOUBLE, G_MAXDOUBLE))
         return FALSE;
-    }
-
-    if (double_ < -G_MAXDOUBLE || double_ > G_MAXDOUBLE) {
-        PyErr_Format (PyExc_ValueError, "%f not in range %f to %f", double_, -G_MAXDOUBLE, G_MAXDOUBLE);
-        return FALSE;
-    }
 
     arg->v_double = double_;
 
@@ -880,7 +909,7 @@ _pygi_marshal_from_py_array (PyGIInvokeState   *state,
                              GIArgument        *arg)
 {
     PyGIMarshalFromPyFunc from_py_marshaller;
-    int i;
+    int i = 0;
     Py_ssize_t length;
     gssize item_size;
     gboolean is_ptr_array;
@@ -986,14 +1015,10 @@ _pygi_marshal_from_py_array (PyGIInvokeState   *state,
                             g_value_init (dest, G_VALUE_TYPE ((GValue*) item.v_pointer));
                             g_value_copy ((GValue*) item.v_pointer, dest);
                         }
-
-                        if (from_py_cleanup) {
+                        /* we free the original copy already, the new one is a plain struct
+                         * in an array. _pygi_marshal_cleanup_from_py_array() does not free it again */
+                        if (from_py_cleanup)
                             from_py_cleanup (state, item_arg_cache, item.v_pointer, TRUE);
-                            /* we freed the original copy already, the new one is a 
-                             * struct in an array. _pygi_marshal_cleanup_from_py_array()
-                             * must not free it again */
-                            item_arg_cache->from_py_cleanup = NULL;
-                        }
                     } else if (!is_boxed) {
                         /* HACK: Gdk.Atom is merely an integer wrapped in a pointer,
                          * so we must not dereference it; just copy the pointer
@@ -1009,6 +1034,12 @@ _pygi_marshal_from_py_array (PyGIInvokeState   *state,
                             if (from_py_cleanup)
                                 from_py_cleanup (state, item_arg_cache, item.v_pointer, TRUE);
                         }
+                    } else if (is_boxed && !item_iface_cache->arg_cache.is_pointer) {
+                        /* The array elements are not expected to be pointers, but the
+                         * elements obtained are boxed pointers themselves, so insert
+                         * the pointed to data.
+                         */
+                        g_array_insert_vals (array_, i, item.v_pointer, 1);
                     } else {
                         g_array_insert_val (array_, i, item);
                     }
@@ -1073,6 +1104,10 @@ array_success:
     if (sequence_cache->array_type == GI_ARRAY_TYPE_C) {
         arg->v_pointer = array_->data;
         g_array_free (array_, FALSE);
+        /* remember the originally allocated array in args_data, as args and
+         * in_args get changed for (inout) arguments */
+        if (arg_cache->transfer == GI_TRANSFER_NOTHING)
+            state->args_data[arg_cache->c_arg_index] = arg->v_pointer;
     } else {
         arg->v_pointer = array_;
     }
@@ -1369,10 +1404,11 @@ _pygi_destroy_notify_create (void)
     if (!global_destroy_notify) {
 
         PyGICClosure *destroy_notify = g_slice_new0 (PyGICClosure);
+        GIBaseInfo* glib_destroy_notify;
 
         g_assert (destroy_notify);
 
-        GIBaseInfo* glib_destroy_notify = g_irepository_find_by_name (NULL, "GLib", "DestroyNotify");
+        glib_destroy_notify = g_irepository_find_by_name (NULL, "GLib", "DestroyNotify");
         g_assert (glib_destroy_notify != NULL);
         g_assert (g_base_info_get_type (glib_destroy_notify) == GI_INFO_TYPE_CALLBACK);
 
@@ -1610,53 +1646,11 @@ _pygi_marshal_from_py_interface_struct (PyGIInvokeState   *state,
      */
 
     if (iface_cache->g_type == G_TYPE_CLOSURE) {
-        GClosure *closure;
-        GType object_gtype = pyg_type_from_object_strict (py_arg, FALSE);
-
-        if ( !(PyCallable_Check(py_arg) || 
-               g_type_is_a (object_gtype, G_TYPE_CLOSURE))) {
-            PyErr_Format (PyExc_TypeError, "Must be callable, not %s",
-                          py_arg->ob_type->tp_name);
-            return FALSE;
-        }
-
-        if (g_type_is_a (object_gtype, G_TYPE_CLOSURE))
-            closure = (GClosure *)pyg_boxed_get (py_arg, void);
-        else
-            closure = pyg_closure_new (py_arg, NULL, NULL);
-
-        if (closure == NULL) {
-            PyErr_SetString (PyExc_RuntimeError, "PyObject conversion to GClosure failed");
-            return FALSE;
-        }
-
-        arg->v_pointer = closure;
-        return TRUE;
+        return pygi_marshal_from_py_gclosure (py_arg, arg);
     } else if (iface_cache->g_type == G_TYPE_VALUE) {
-        GValue *value;
-        GType object_type;
-
-        object_type = pyg_type_from_object_strict ( (PyObject *) py_arg->ob_type, FALSE);
-        if (object_type == G_TYPE_INVALID) {
-            PyErr_SetString (PyExc_RuntimeError, "unable to retrieve object's GType");
-            return FALSE;
-        }
-
-        /* if already a gvalue, use that, else marshal into gvalue */
-        if (object_type == G_TYPE_VALUE) {
-            value = (GValue *)( (PyGObject *)py_arg)->obj;
-        } else {
-            value = g_slice_new0 (GValue);
-            g_value_init (value, object_type);
-            if (pyg_value_from_pyobject (value, py_arg) < 0) {
-                g_slice_free (GValue, value);
-                PyErr_SetString (PyExc_RuntimeError, "PyObject conversion to GValue failed");
-                return FALSE;
-            }
-        }
-
-        arg->v_pointer = value;
-        return TRUE;
+        return pygi_marshal_from_py_gvalue(py_arg, arg,
+                                           arg_cache->transfer,
+                                           arg_cache->is_caller_allocates);
     } else if (iface_cache->is_foreign) {
         PyObject *success;
         success = pygi_struct_foreign_convert_to_g_argument (py_arg,
@@ -1741,11 +1735,7 @@ _pygi_marshal_from_py_interface_object (PyGIInvokeState   *state,
         return FALSE;
     }
 
-    arg->v_pointer = pygobject_get(py_arg);
-    if (arg_cache->transfer == GI_TRANSFER_EVERYTHING)
-        g_object_ref (arg->v_pointer);
-
-    return TRUE;
+    return pygi_marshal_from_py_gobject (py_arg, arg, arg_cache->transfer);
 }
 
 gboolean
@@ -1835,4 +1825,150 @@ gboolean _pygi_marshal_from_py_interface_instance (PyGIInvokeState   *state,
    }
 
    return TRUE;
+}
+
+/* pygi_marshal_from_py_gobject:
+ * py_arg: (in):
+ * arg: (out):
+ */
+gboolean
+pygi_marshal_from_py_gobject (PyObject *py_arg, /*in*/
+                              GIArgument *arg,  /*out*/
+                              GITransfer transfer) {
+    GObject *gobj;
+
+    if (py_arg == Py_None) {
+        arg->v_pointer = NULL;
+        return TRUE;
+    }
+
+    if (!pygobject_check (py_arg, &PyGObject_Type)) {
+        PyObject *repr = PyObject_Repr (py_arg);
+        PyErr_Format(PyExc_TypeError, "expected GObject but got %s",
+                     PYGLIB_PyUnicode_AsString (repr));
+        Py_DECREF (repr);
+        return FALSE;
+    }
+
+    gobj = pygobject_get (py_arg);
+    if (transfer == GI_TRANSFER_EVERYTHING) {
+        /* An easy case of adding a new ref that the caller will take ownership of.
+         * Pythons existing ref to the GObject will be managed normally with the wrapper.
+         */
+        g_object_ref (gobj);
+
+    } else if (py_arg->ob_refcnt == 1 && gobj->ref_count == 1) {
+        /* If both object ref counts are only 1 at this point (the reference held
+         * in a return tuple), we assume the GObject will be free'd before reaching
+         * its target and become invalid. So instead of getting invalid object errors
+         * we add a new GObject ref.
+         */
+        g_object_ref (gobj);
+
+        if (((PyGObject *)py_arg)->private_flags.flags & PYGOBJECT_GOBJECT_WAS_FLOATING) {
+            /* HACK:
+             * We want to re-float instances that were floating and the Python
+             * wrapper assumed ownership. With the additional caveat that there
+             * are not any strong references beyond the return tuple.
+             * This should be removed once the following ticket is fixed:
+             * https://bugzilla.gnome.org/show_bug.cgi?id=693393
+             */
+            g_object_force_floating (gobj);
+
+        } else {
+            PyObject *repr = PyObject_Repr (py_arg);
+            gchar *msg = g_strdup_printf ("Expecting to marshal a borrowed reference for %s, "
+                                          "but nothing in Python is holding a reference to this object. "
+                                          "See: https://bugzilla.gnome.org/show_bug.cgi?id=687522",
+                                          PYGLIB_PyUnicode_AsString(repr));
+            Py_DECREF (repr);
+            if (PyErr_WarnEx (PyExc_RuntimeWarning, msg, 2)) {
+                g_free (msg);
+                return FALSE;
+            }
+            g_free (msg);
+        }
+    }
+
+    arg->v_pointer = gobj;
+    return TRUE;
+}
+
+/* pygi_marshal_from_py_gvalue:
+ * py_arg: (in):
+ * arg: (out):
+ * transfer:
+ * is_allocated: TRUE if arg->v_pointer is an already allocated GValue
+ */
+gboolean
+pygi_marshal_from_py_gvalue (PyObject *py_arg,
+                             GIArgument *arg,
+                             GITransfer transfer,
+                             gboolean is_allocated) {
+    GValue *value;
+    GType object_type;
+
+    object_type = pyg_type_from_object_strict ( (PyObject *) py_arg->ob_type, FALSE);
+    if (object_type == G_TYPE_INVALID) {
+        PyErr_SetString (PyExc_RuntimeError, "unable to retrieve object's GType");
+        return FALSE;
+    }
+
+    if (is_allocated)
+        value = (GValue *)arg->v_pointer;
+    else
+        value = g_slice_new0 (GValue);
+
+    /* if already a gvalue, use that, else marshal into gvalue */
+    if (object_type == G_TYPE_VALUE) {
+        GValue *source_value = pyg_boxed_get (py_arg, GValue);
+        if (G_VALUE_TYPE (value) == G_TYPE_INVALID)
+            g_value_init (value, G_VALUE_TYPE (source_value));
+        g_value_copy (source_value, value);
+    } else {
+        if (G_VALUE_TYPE (value) == G_TYPE_INVALID)
+            g_value_init (value, object_type);
+
+        if (pyg_value_from_pyobject (value, py_arg) < 0) {
+            if (!is_allocated)
+                g_slice_free (GValue, value);
+            PyErr_SetString (PyExc_RuntimeError, "PyObject conversion to GValue failed");
+            return FALSE;
+        }
+    }
+
+    arg->v_pointer = value;
+    return TRUE;
+}
+
+/* pygi_marshal_from_py_gclosure:
+ * py_arg: (in):
+ * arg: (out):
+ */
+gboolean
+pygi_marshal_from_py_gclosure(PyObject *py_arg,
+                              GIArgument *arg)
+{
+    GClosure *closure;
+    GType object_gtype = pyg_type_from_object_strict (py_arg, FALSE);
+
+    if ( !(PyCallable_Check(py_arg) ||
+           g_type_is_a (object_gtype, G_TYPE_CLOSURE))) {
+        PyErr_Format (PyExc_TypeError, "Must be callable, not %s",
+                      py_arg->ob_type->tp_name);
+        return FALSE;
+    }
+
+    if (g_type_is_a (object_gtype, G_TYPE_CLOSURE))
+        closure = (GClosure *)pyg_boxed_get (py_arg, void);
+    else
+        closure = pyg_closure_new (py_arg, NULL, NULL);
+
+    if (closure == NULL) {
+        PyErr_SetString (PyExc_RuntimeError, "PyObject conversion to GClosure failed");
+        return FALSE;
+    }
+
+    arg->v_pointer = closure;
+    return TRUE;
 }

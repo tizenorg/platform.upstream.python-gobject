@@ -480,6 +480,7 @@ _arg_cache_from_py_array_setup (PyGIArgCache *arg_cache,
             child_cache = _arg_cache_alloc ();
         } else if (child_cache->meta_type == PYGI_META_ARG_TYPE_CHILD ||
                    child_cache->meta_type == PYGI_META_ARG_TYPE_CHILD_NEEDS_UPDATE) {
+            arg_cache->from_py_cleanup = _pygi_marshal_cleanup_from_py_array;
             return TRUE;
         }
 
@@ -1460,6 +1461,20 @@ _pygi_callable_cache_new (GICallableInfo *callable_info, gboolean is_ccallback)
         return NULL;
 
     cache->name = g_base_info_get_name ((GIBaseInfo *)callable_info);
+
+    if (g_base_info_is_deprecated (callable_info)) {
+        const gchar *deprecated = g_base_info_get_attribute (callable_info, "deprecated");
+        gchar *warning;
+        if (deprecated != NULL)
+            warning = g_strdup_printf ("%s.%s is deprecated: %s",
+                                       g_base_info_get_namespace (callable_info), cache->name,
+                                       deprecated);
+        else
+            warning = g_strdup_printf ("%s.%s is deprecated",
+                                       g_base_info_get_namespace (callable_info), cache->name);
+        PyErr_WarnEx(PyExc_DeprecationWarning, warning, 0);
+        g_free (warning);
+    }
 
     if (type == GI_INFO_TYPE_FUNCTION) {
         GIFunctionInfoFlags flags;

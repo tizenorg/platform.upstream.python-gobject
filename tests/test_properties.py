@@ -541,6 +541,24 @@ class TestProperty(unittest.TestCase):
         self.assertEqual(o.value, 'blah')
         self.assertEqual(o.props.value, 'blah')
 
+    def test_decorator_private_setter(self):
+        class C(GObject.GObject):
+            _value = 'value'
+
+            @GObject.Property
+            def value(self):
+                return self._value
+
+            @value.setter
+            def _set_value(self, value):
+                self._value = value
+
+        o = C()
+        self.assertEqual(o.value, 'value')
+        o.value = 'blah'
+        self.assertEqual(o.value, 'blah')
+        self.assertEqual(o.props.value, 'blah')
+
     def test_decorator_with_call(self):
         class C(GObject.GObject):
             _value = 1
@@ -571,7 +589,6 @@ class TestProperty(unittest.TestCase):
         self.assertRaises(TypeError, GObject.Property, type=bool)
         self.assertRaises(TypeError, GObject.Property, type=object, default=0)
         self.assertRaises(TypeError, GObject.Property, type=complex)
-        self.assertRaises(TypeError, GObject.Property, flags=-10)
 
     def test_defaults(self):
         GObject.Property(type=bool, default=True)
@@ -697,7 +714,7 @@ class TestProperty(unittest.TestCase):
         self.assertEqual(b.prop1, 20)
 
     def test_property_subclass_c(self):
-        class A(GIMarshallingTests.PropertiesObject):
+        class A(Regress.TestSubObj):
             prop1 = GObject.Property(type=int)
 
         a = A()
@@ -705,8 +722,15 @@ class TestProperty(unittest.TestCase):
         self.assertEqual(a.prop1, 10)
 
         # also has parent properties
-        a.props.some_int = 20
-        self.assertEqual(a.props.some_int, 20)
+        a.props.int = 20
+        self.assertEqual(a.props.int, 20)
+
+        # Some of which are unusable without introspection
+        a.props.list = ("str1", "str2")
+        self.assertEqual(a.props.list, ["str1", "str2"])
+
+        a.set_property("list", ("str3", "str4"))
+        self.assertEqual(a.props.list, ["str3", "str4"])
 
     def test_property_subclass_custom_setter(self):
         # test for #523352

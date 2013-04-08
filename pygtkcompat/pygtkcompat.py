@@ -100,7 +100,7 @@ def enable():
 _unset = object()
 
 
-def enable_gtk(version='2.0'):
+def enable_gtk(version='3.0'):
     # set the default encoding like PyGTK
     reload(sys)
     if sys.version_info < (3, 0):
@@ -189,6 +189,12 @@ def enable_gtk(version='2.0'):
 
     Gdk.screen_width = Gdk.Screen.width
     Gdk.screen_height = Gdk.Screen.height
+
+    orig_gdk_window_get_geometry = Gdk.Window.get_geometry
+
+    def gdk_window_get_geometry(window):
+        return orig_gdk_window_get_geometry(window) + (window.get_visual().get_best_depth(),)
+    Gdk.Window.get_geometry = gdk_window_get_geometry
 
     # gtk
     gi.require_version('Gtk', version)
@@ -371,6 +377,8 @@ def enable_gtk(version='2.0'):
 
     # Widget
 
+    Gtk.Widget.window = property(fget=Gtk.Widget.get_window)
+
     Gtk.widget_get_default_direction = Gtk.Widget.get_default_direction
     orig_size_request = Gtk.Widget.size_request
 
@@ -405,6 +413,62 @@ def enable_gtk(version='2.0'):
             return Styles(instance)
     Gtk.Widget.style = StyleDescriptor()
 
+    # TextView
+
+    orig_text_view_scroll_to_mark = Gtk.TextView.scroll_to_mark
+
+    def text_view_scroll_to_mark(self, mark, within_margin,
+                                 use_align=False, xalign=0.5, yalign=0.5):
+        return orig_text_view_scroll_to_mark(self, mark, within_margin,
+                                             use_align, xalign, yalign)
+    Gtk.TextView.scroll_to_mark = text_view_scroll_to_mark
+
+    # Window
+
+    orig_set_geometry_hints = Gtk.Window.set_geometry_hints
+
+    def set_geometry_hints(self, geometry_widget=None,
+                           min_width=-1, min_height=-1, max_width=-1, max_height=-1,
+                           base_width=-1, base_height=-1, width_inc=-1, height_inc=-1,
+                           min_aspect=-1.0, max_aspect=-1.0):
+
+        geometry = Gdk.Geometry()
+        geom_mask = Gdk.WindowHints(0)
+
+        if min_width >= 0 or min_height >= 0:
+            geometry.min_width = max(min_width, 0)
+            geometry.min_height = max(min_height, 0)
+            geom_mask |= Gdk.WindowHints.MIN_SIZE
+
+        if max_width >= 0 or max_height >= 0:
+            geometry.max_width = max(max_width, 0)
+            geometry.max_height = max(max_height, 0)
+            geom_mask |= Gdk.WindowHints.MAX_SIZE
+
+        if base_width >= 0 or base_height >= 0:
+            geometry.base_width = max(base_width, 0)
+            geometry.base_height = max(base_height, 0)
+            geom_mask |= Gdk.WindowHints.BASE_SIZE
+
+        if width_inc >= 0 or height_inc >= 0:
+            geometry.width_inc = max(width_inc, 0)
+            geometry.height_inc = max(height_inc, 0)
+            geom_mask |= Gdk.WindowHints.RESIZE_INC
+
+        if min_aspect >= 0.0 or max_aspect >= 0.0:
+            if min_aspect <= 0.0 or max_aspect <= 0.0:
+                raise TypeError("aspect ratios must be positive")
+
+            geometry.min_aspect = min_aspect
+            geometry.max_aspect = max_aspect
+            geom_mask |= Gdk.WindowHints.ASPECT
+
+        return orig_set_geometry_hints(self, geometry_widget, geometry, geom_mask)
+
+    Gtk.Window.set_geometry_hints = set_geometry_hints
+    Gtk.window_list_toplevels = Gtk.Window.list_toplevels
+    Gtk.window_set_default_icon_name = Gtk.Window.set_default_icon_name
+
     # gtk.unixprint
 
     class UnixPrint(object):
@@ -426,6 +490,9 @@ def enable_gtk(version='2.0'):
                 target = '_' + target
             value = getattr(Gdk, name)
             setattr(keysyms, target, value)
+
+    from . import generictreemodel
+    Gtk.GenericTreeModel = generictreemodel.GenericTreeModel
 
 
 def enable_vte():

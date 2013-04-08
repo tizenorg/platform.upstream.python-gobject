@@ -107,7 +107,7 @@ GType     pyg_type_from_object_strict (PyObject *obj, gboolean strict);
 GType     pyg_type_from_object (PyObject *obj);
 
 gint pyg_enum_get_value  (GType enum_type, PyObject *obj, gint *val);
-gint pyg_flags_get_value (GType flag_type, PyObject *obj, gint *val);
+gint pyg_flags_get_value (GType flag_type, PyObject *obj, guint *val);
 int pyg_pyobj_to_unichar_conv (PyObject* py_obj, void* ptr);
 
 typedef PyObject *(* fromvaluefunc)(const GValue *value);
@@ -154,12 +154,10 @@ void          pygobject_register_class   (PyObject *dict,
 					  PyObject *bases);
 void          pygobject_register_wrapper (PyObject *self);
 PyObject *    pygobject_new              (GObject *obj);
-PyObject *    pygobject_new_full         (GObject *obj, gboolean sink, gpointer g_class);
+PyObject *    pygobject_new_full         (GObject *obj, gboolean steal, gpointer g_class);
 void          pygobject_sink             (GObject *obj);
 PyTypeObject *pygobject_lookup_class     (GType gtype);
 void          pygobject_watch_closure    (PyObject *self, GClosure *closure);
-void          pygobject_register_sinkfunc(GType type,
-					  void (* sinkfunc)(GObject *object));
 int           pyg_type_register          (PyTypeObject *class,
 					  const gchar *type_name);
 
@@ -181,7 +179,8 @@ const gchar * pyg_constant_strip_prefix(const gchar *name, const gchar *strip_pr
 
 /* pygflags */
 typedef struct {
-	PYGLIB_PyLongObject parent;
+    PYGLIB_PyLongObject parent;
+    int zero_pad; /* must always be 0 */
     GType gtype;
 } PyGFlags;
 
@@ -194,13 +193,14 @@ extern PyObject * pyg_flags_add        (PyObject *   module,
 					const char * strip_prefix,
 					GType        gtype);
 extern PyObject * pyg_flags_from_gtype (GType        gtype,
-					int          value);
+					guint        value);
 
 /* pygenum */
 #define PyGEnum_Check(x) (PyObject_IsInstance((PyObject *)x, (PyObject *)&PyGEnum_Type) && g_type_is_a(((PyGFlags*)x)->gtype, G_TYPE_ENUM))
 
 typedef struct {
-	PYGLIB_PyLongObject parent;
+    PYGLIB_PyLongObject parent;
+    int zero_pad; /* must always be 0 */
     GType gtype;
 } PyGEnum;
 

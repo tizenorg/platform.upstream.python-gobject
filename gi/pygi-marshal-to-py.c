@@ -34,7 +34,7 @@
 #include "pygi-marshal-cleanup.h"
 #include "pygi-marshal-to-py.h"
 
-gboolean
+static gboolean
 gi_argument_to_c_long (GIArgument *arg_in,
                        long *c_long_out,
                        GITypeTag type_tag)
@@ -72,7 +72,7 @@ gi_argument_to_c_long (GIArgument *arg_in,
     }
 }
 
-gboolean
+static gboolean
 gi_argument_to_gsize (GIArgument *arg_in,
                       gsize      *gsize_out,
                       GITypeTag   type_tag)
@@ -434,13 +434,15 @@ _pygi_marshal_to_py_array (PyGIInvokeState   *state,
                                 item_arg.v_pointer = g_variant_ref_sink (g_array_index (array_, gpointer, i));
                               else
                                 item_arg.v_pointer = g_array_index (array_, gpointer, i);
-                            } else if (arg_cache->transfer == GI_TRANSFER_EVERYTHING) {
+                            } else if (arg_cache->transfer == GI_TRANSFER_EVERYTHING && !item_arg_cache->is_pointer &&
+                                       !g_type_is_a (iface_cache->g_type, G_TYPE_BOXED)) {
+                                /* array elements are structs */
                                 gpointer *_struct = g_malloc (item_size);
                                 memcpy (_struct, array_->data + i * item_size,
                                         item_size);
                                 item_arg.v_pointer = _struct;
                             } else if (item_arg_cache->is_pointer)
-                                /* this is the case for GAtom* arrays */
+                                /* array elements are pointers to values */
                                 item_arg.v_pointer = g_array_index (array_, gpointer, i);
                             else
                                 item_arg.v_pointer = array_->data + i * item_size;
@@ -813,8 +815,10 @@ _pygi_marshal_to_py_interface_struct (PyGIInvokeState   *state,
         py_obj = pygi_struct_foreign_convert_from_g_argument (iface_cache->interface_info,
                                                               arg->v_pointer);
     } else if (g_type_is_a (type, G_TYPE_BOXED)) {
-        py_obj = _pygi_boxed_new ( (PyTypeObject *)iface_cache->py_type, arg->v_pointer, 
-                                  arg_cache->transfer == GI_TRANSFER_EVERYTHING);
+        py_obj = _pygi_boxed_new ( (PyTypeObject *)iface_cache->py_type, arg->v_pointer,
+                                  arg_cache->transfer == GI_TRANSFER_EVERYTHING || arg_cache->is_caller_allocates,
+                                  arg_cache->is_caller_allocates ?
+                                          g_struct_info_get_size(iface_cache->interface_info) : 0);
     } else if (g_type_is_a (type, G_TYPE_POINTER)) {
         if (iface_cache->py_type == NULL ||
                 !PyType_IsSubtype ( (PyTypeObject *)iface_cache->py_type, &PyGIStruct_Type)) {
@@ -874,28 +878,7 @@ _pygi_marshal_to_py_interface_object (PyGIInvokeState   *state,
                                       PyGIArgCache      *arg_cache,
                                       GIArgument        *arg)
 {
-    PyObject *py_obj;
-
-    if (arg->v_pointer == NULL) {
-        py_obj = Py_None;
-        Py_INCREF (py_obj);
-        return py_obj;
-    }
-
-    if (G_IS_PARAM_SPEC(arg->v_pointer))
-    {
-    	py_obj = pyg_param_spec_new (arg->v_pointer);
-    	if (arg_cache->transfer == GI_TRANSFER_EVERYTHING)
-    	    		g_param_spec_unref (arg->v_pointer);
-    }
-    else
-    {
-    	py_obj = pygobject_new (arg->v_pointer);
-    	if (arg_cache->transfer == GI_TRANSFER_EVERYTHING)
-    		g_object_unref (arg->v_pointer);
-    }
-
-    return py_obj;
+    return pygi_marshal_to_py_object(arg, arg_cache->transfer);
 }
 
 PyObject *
@@ -909,4 +892,26 @@ _pygi_marshal_to_py_interface_union  (PyGIInvokeState   *state,
     PyErr_Format (PyExc_NotImplementedError,
                   "Marshalling for this type is not implemented yet");
     return py_obj;
+}
+
+PyObject *
+pygi_marshal_to_py_object (GIArgument *arg, GITransfer transfer) {
+    PyObject *pyobj;
+
+    if (arg->v_pointer == NULL) {
+        pyobj = Py_None;
+        Py_INCREF (pyobj);
+
+    } else if (G_IS_PARAM_SPEC(arg->v_pointer)) {
+        pyobj = pyg_param_spec_new (arg->v_pointer);
+        if (transfer == GI_TRANSFER_EVERYTHING)
+            g_param_spec_unref (arg->v_pointer);
+
+    } else {
+         pyobj = pygobject_new_full (arg->v_pointer,
+                                     /*steal=*/ transfer == GI_TRANSFER_EVERYTHING,
+                                     /*type=*/  NULL);
+    }
+
+    return pyobj;
 }

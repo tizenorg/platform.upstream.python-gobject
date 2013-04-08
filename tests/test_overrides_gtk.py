@@ -1,7 +1,11 @@
 # -*- Mode: Python; py-indent-offset: 4 -*-
+# coding: UTF-8
 # vim: tabstop=4 shiftwidth=4 expandtab
 
+import contextlib
 import unittest
+import time
+import sys
 
 from compathelper import _unicode, _bytes
 
@@ -14,6 +18,38 @@ try:
     Gtk  # pyflakes
 except ImportError:
     Gtk = None
+
+
+@contextlib.contextmanager
+def realized(widget):
+    """Makes sure the widget is realized.
+
+    view = Gtk.TreeView()
+    with realized(view):
+        do_something(view)
+    """
+
+    if isinstance(widget, Gtk.Window):
+        toplevel = widget
+    else:
+        toplevel = widget.get_parent_window()
+
+    if toplevel is None:
+        window = Gtk.Window()
+        window.add(widget)
+
+    widget.realize()
+    while Gtk.events_pending():
+        Gtk.main_iteration()
+    assert widget.get_realized()
+    yield widget
+
+    if toplevel is None:
+        window.remove(widget)
+        window.destroy()
+
+    while Gtk.events_pending():
+        Gtk.main_iteration()
 
 
 @unittest.skipUnless(Gtk, 'Gtk not available')
@@ -113,6 +149,12 @@ class TestGtk(unittest.TestCase):
         groups = ui.get_action_groups()
         self.assertEqual(ag, groups[-2])
         self.assertEqual(ag2, groups[-1])
+
+    def test_uimanager_nonascii(self):
+        ui = Gtk.UIManager()
+        ui.add_ui_from_string(b'<ui><menubar name="menub\xc3\xa6r1" /></ui>'.decode('UTF-8'))
+        mi = ui.get_widget("/menubær1")
+        self.assertEqual(type(mi), Gtk.MenuBar)
 
     def test_builder(self):
         self.assertEqual(Gtk.Builder, gi.overrides.Gtk.Builder)
@@ -512,6 +554,38 @@ class TestGtk(unittest.TestCase):
         self.assertTrue(hasattr(widget.drag_dest_set_proxy, '__call__'))
         self.assertTrue(hasattr(widget.drag_get_data, '__call__'))
 
+    def test_drag_target_list(self):
+        mixed_target_list = [Gtk.TargetEntry.new('test0', 0, 0),
+                             ('test1', 1, 1),
+                             Gtk.TargetEntry.new('test2', 2, 2),
+                             ('test3', 3, 3)]
+
+        def _test_target_list(targets):
+            for i, target in enumerate(targets):
+                self.assertTrue(isinstance(target, Gtk.TargetEntry))
+                self.assertEqual(target.target, 'test' + str(i))
+                self.assertEqual(target.flags, i)
+                self.assertEqual(target.info, i)
+
+        _test_target_list(Gtk._construct_target_list(mixed_target_list))
+
+        widget = Gtk.Button()
+        widget.drag_dest_set(Gtk.DestDefaults.DROP, None, Gdk.DragAction.COPY)
+        widget.drag_dest_set_target_list(mixed_target_list)
+        widget.drag_dest_get_target_list()
+
+        widget.drag_source_set(Gdk.ModifierType.BUTTON1_MASK, None, Gdk.DragAction.MOVE)
+        widget.drag_source_set_target_list(mixed_target_list)
+        widget.drag_source_get_target_list()
+
+        treeview = Gtk.TreeView()
+        treeview.enable_model_drag_source(Gdk.ModifierType.BUTTON1_MASK,
+                                          mixed_target_list,
+                                          Gdk.DragAction.DEFAULT | Gdk.DragAction.MOVE)
+
+        treeview.enable_model_drag_dest(mixed_target_list,
+                                        Gdk.DragAction.DEFAULT | Gdk.DragAction.MOVE)
+
     def test_scrollbar(self):
         # PyGTK compat
         adjustment = Gtk.Adjustment()
@@ -565,6 +639,21 @@ class TestGtk(unittest.TestCase):
 
         self.assertEqual(viewport.props.vadjustment, vadjustment)
         self.assertEqual(viewport.props.hadjustment, hadjustment)
+
+    def test_stock_lookup(self):
+        l = Gtk.stock_lookup('gtk-ok')
+        self.assertEqual(type(l), Gtk.StockItem)
+        self.assertEqual(l.stock_id, 'gtk-ok')
+        self.assertEqual(Gtk.stock_lookup('nosuchthing'), None)
+
+    def test_gtk_main(self):
+        # with no arguments
+        GLib.timeout_add(100, Gtk.main_quit)
+        Gtk.main()
+
+        # overridden function ignores its arguments
+        GLib.timeout_add(100, Gtk.main_quit, 'hello')
+        Gtk.main()
 
 
 @unittest.skipUnless(Gtk, 'Gtk not available')
@@ -1300,7 +1389,65 @@ class TestTreeModel(unittest.TestCase):
         def set_row3():
             model[0][:2] = ("0", 0)
 
-        self.assertRaises(ValueError, set_row3)
+        self.assertRaises(TypeError, set_row3)
+
+    def test_tree_model_set_value_to_none(self):
+        # Tests allowing the usage of None to set an empty value on a model.
+        store = Gtk.ListStore(str)
+        row = store.append(['test'])
+        self.assertSequenceEqual(store[0][:], ['test'])
+        store.set_value(row, 0, None)
+        self.assertSequenceEqual(store[0][:], [None])
+
+    def test_signal_emission_tree_path_coerce(self):
+        class Model(GObject.Object, Gtk.TreeModel):
+            pass
+
+        model = Model()
+        tree_paths = []
+
+        def on_any_signal(model, path, *args):
+            tree_paths.append(path.to_string())
+
+        model.connect('row-changed', on_any_signal)
+        model.connect('row-deleted', on_any_signal)
+        model.connect('row-has-child-toggled', on_any_signal)
+        model.connect('row-inserted', on_any_signal)
+
+        model.row_changed('0', Gtk.TreeIter())
+        self.assertEqual(tree_paths[-1], '0')
+
+        model.row_deleted('1')
+        self.assertEqual(tree_paths[-1], '1')
+
+        model.row_has_child_toggled('2', Gtk.TreeIter())
+        self.assertEqual(tree_paths[-1], '2')
+
+        model.row_inserted('3', Gtk.TreeIter())
+        self.assertEqual(tree_paths[-1], '3')
+
+    def test_tree_model_filter(self):
+        model = Gtk.ListStore(int, str, float)
+        model.append([1, "one", -0.1])
+        model.append([2, "two", -0.2])
+
+        filtered = Gtk.TreeModelFilter(child_model=model)
+
+        self.assertEqual(filtered[0][1], 'one')
+        filtered[0][1] = 'ONE'
+        self.assertEqual(filtered[0][1], 'ONE')
+
+    def test_list_store_performance(self):
+        model = Gtk.ListStore(int, str)
+
+        iterations = 2000
+        start = time.clock()
+        i = iterations
+        while i > 0:
+            model.append([1, 'hello'])
+            i -= 1
+        end = time.clock()
+        sys.stderr.write('[%.0f µs/append] ' % ((end - start) * 1000000 / iterations))
 
 
 @unittest.skipUnless(Gtk, 'Gtk not available')
@@ -1310,19 +1457,13 @@ class TestTreeView(unittest.TestCase):
         store.append((0, "foo"))
         store.append((1, "bar"))
         view = Gtk.TreeView()
-        # FIXME: We can't easily call get_cursor() to make sure this works as
-        # expected as we need to realize and focus the column; the following
-        # will raise a Gtk-CRITICAL which we ignore for now
-        old_mask = GLib.log_set_always_fatal(
-            GLib.LogLevelFlags.LEVEL_WARNING | GLib.LogLevelFlags.LEVEL_ERROR)
-        try:
+
+        with realized(view):
             view.set_cursor(store[1].path)
             view.set_cursor(str(store[1].path))
 
             view.get_cell_area(store[1].path)
             view.get_cell_area(str(store[1].path))
-        finally:
-            GLib.log_set_always_fatal(old_mask)
 
     def test_tree_view_column(self):
         cell = Gtk.CellRendererText()
@@ -1350,26 +1491,21 @@ class TestTreeView(unittest.TestCase):
         # unconnected
         tree.insert_column_with_attributes(-1, 'Head4', cell4)
 
-        # might cause a Pango warning, do not break on this
-        old_mask = GLib.log_set_always_fatal(
-            GLib.LogLevelFlags.LEVEL_CRITICAL | GLib.LogLevelFlags.LEVEL_ERROR)
-        try:
-            # causes the widget to get realized and cellN.props.text receive a
-            # value, otherwise it will be None.
-            tree.get_preferred_size()
-        finally:
-            GLib.log_set_always_fatal(old_mask)
+        with realized(tree):
+            tree.set_cursor(model[0].path)
+            while Gtk.events_pending():
+                Gtk.main_iteration()
 
-        self.assertEqual(tree.get_column(0).get_title(), 'Head1')
-        self.assertEqual(tree.get_column(1).get_title(), 'Head2')
-        self.assertEqual(tree.get_column(2).get_title(), 'Head3')
-        self.assertEqual(tree.get_column(3).get_title(), 'Head4')
+            self.assertEqual(tree.get_column(0).get_title(), 'Head1')
+            self.assertEqual(tree.get_column(1).get_title(), 'Head2')
+            self.assertEqual(tree.get_column(2).get_title(), 'Head3')
+            self.assertEqual(tree.get_column(3).get_title(), 'Head4')
 
-        # cursor should be at the first row
-        self.assertEqual(cell1.props.text, 'cell11')
-        self.assertEqual(cell2.props.text, 'cell12')
-        self.assertEqual(cell3.props.text, 'cell13')
-        self.assertEqual(cell4.props.text, None)
+            # cursor should be at the first row
+            self.assertEqual(cell1.props.text, 'cell11')
+            self.assertEqual(cell2.props.text, 'cell12')
+            self.assertEqual(cell3.props.text, 'cell13')
+            self.assertEqual(cell4.props.text, None)
 
     def test_tree_view_column_set_attributes(self):
         store = Gtk.ListStore(int, str)
@@ -1387,17 +1523,8 @@ class TestTreeView(unittest.TestCase):
         column.pack_start(cell, expand=True)
         column.set_attributes(cell, text=1)
 
-        # might cause a Pango warning, do not break on this
-        old_mask = GLib.log_set_always_fatal(
-            GLib.LogLevelFlags.LEVEL_CRITICAL | GLib.LogLevelFlags.LEVEL_ERROR)
-        try:
-            # This will make cell.props.text receive a value, otherwise it
-            # will be None.
-            treeview.get_preferred_size()
-        finally:
-            GLib.log_set_always_fatal(old_mask)
-
-        self.assertTrue(cell.props.text in directors)
+        with realized(treeview):
+            self.assertTrue(cell.props.text in directors)
 
     def test_tree_selection(self):
         store = Gtk.ListStore(int, str)

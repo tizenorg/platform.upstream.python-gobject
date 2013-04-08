@@ -12,6 +12,7 @@ import locale
 import subprocess
 import gc
 import weakref
+import warnings
 from io import StringIO, BytesIO
 
 import gi
@@ -812,6 +813,18 @@ class TestArray(unittest.TestCase):
 
         GIMarshallingTests.array_struct_in([struct1, struct2, struct3])
 
+    @unittest.skipUnless(hasattr(GIMarshallingTests, 'array_struct_value_in'),
+                         'too old gobject-introspection')
+    def test_array_boxed_struct_value_in(self):
+        struct1 = GIMarshallingTests.BoxedStruct()
+        struct1.long_ = 1
+        struct2 = GIMarshallingTests.BoxedStruct()
+        struct2.long_ = 2
+        struct3 = GIMarshallingTests.BoxedStruct()
+        struct3.long_ = 3
+
+        GIMarshallingTests.array_struct_value_in([struct1, struct2, struct3])
+
     def test_array_boxed_struct_take_in(self):
         struct1 = GIMarshallingTests.BoxedStruct()
         struct1.long_ = 1
@@ -824,13 +837,11 @@ class TestArray(unittest.TestCase):
 
         self.assertEqual(1, struct1.long_)
 
-    @unittest.expectedFailure
     def test_array_boxed_struct_return(self):
         (struct1, struct2, struct3) = GIMarshallingTests.array_zero_terminated_return_struct()
         self.assertEqual(GIMarshallingTests.BoxedStruct, type(struct1))
         self.assertEqual(GIMarshallingTests.BoxedStruct, type(struct2))
         self.assertEqual(GIMarshallingTests.BoxedStruct, type(struct3))
-        # FIXME: gets bogus values
         self.assertEqual(42, struct1.long_)
         self.assertEqual(43, struct2.long_)
         self.assertEqual(44, struct3.long_)
@@ -1042,8 +1053,8 @@ class TestGBytes(unittest.TestCase):
         self.assertFalse(b.equal(a2))
 
         self.assertEqual(0, a1.compare(a2))
-        self.assertEqual(1, a1.compare(b))
-        self.assertEqual(-1, b.compare(a1))
+        self.assertLess(0, a1.compare(b))
+        self.assertGreater(0, b.compare(a1))
 
 
 class TestGByteArray(unittest.TestCase):
@@ -1213,32 +1224,24 @@ class TestGValue(unittest.TestCase):
 
     def test_gvalue_in(self):
         GIMarshallingTests.gvalue_in(42)
-        value = GObject.Value()
-        value.init(GObject.TYPE_INT)
-        value.set_int(42)
+        value = GObject.Value(GObject.TYPE_INT, 42)
         GIMarshallingTests.gvalue_in(value)
 
     def test_gvalue_int64_in(self):
-        value = GObject.Value()
-        value.init(GObject.TYPE_INT64)
-        value.set_int64(GObject.G_MAXINT64)
+        value = GObject.Value(GObject.TYPE_INT64, GObject.G_MAXINT64)
         GIMarshallingTests.gvalue_int64_in(value)
 
     def test_gvalue_in_with_type(self):
-        value = GObject.Value()
-        value.init(GObject.TYPE_STRING)
-        value.set_string('foo')
+        value = GObject.Value(GObject.TYPE_STRING, 'foo')
         GIMarshallingTests.gvalue_in_with_type(value, GObject.TYPE_STRING)
 
-        value = GObject.Value()
-        value.init(GIMarshallingTests.Flags.__gtype__)
-        value.set_flags(GIMarshallingTests.Flags.VALUE1)
+        value = GObject.Value(GIMarshallingTests.Flags.__gtype__,
+                              GIMarshallingTests.Flags.VALUE1)
         GIMarshallingTests.gvalue_in_with_type(value, GObject.TYPE_FLAGS)
 
     def test_gvalue_in_enum(self):
-        value = GObject.Value()
-        value.init(GIMarshallingTests.Enum.__gtype__)
-        value.set_enum(GIMarshallingTests.Enum.VALUE3)
+        value = GObject.Value(GIMarshallingTests.Enum.__gtype__,
+                              GIMarshallingTests.Enum.VALUE3)
         GIMarshallingTests.gvalue_in_enum(value)
 
     def test_gvalue_out(self):
@@ -1252,9 +1255,7 @@ class TestGValue(unittest.TestCase):
 
     def test_gvalue_inout(self):
         self.assertEqual('42', GIMarshallingTests.gvalue_inout(42))
-        value = GObject.Value()
-        value.init(GObject.TYPE_INT)
-        value.set_int(42)
+        value = GObject.Value(int, 42)
         self.assertEqual('42', GIMarshallingTests.gvalue_inout(value))
 
     def test_gvalue_flat_array_in(self):
@@ -1350,13 +1351,15 @@ class TestGValue(unittest.TestCase):
 
 class TestGClosure(unittest.TestCase):
 
-    def test_gclosure_in(self):
+    def test_in(self):
         GIMarshallingTests.gclosure_in(lambda: 42)
 
+    def test_pass(self):
         # test passing a closure between two C calls
         closure = GIMarshallingTests.gclosure_return()
         GIMarshallingTests.gclosure_in(closure)
 
+    def test_type_error(self):
         self.assertRaises(TypeError, GIMarshallingTests.gclosure_in, 42)
         self.assertRaises(TypeError, GIMarshallingTests.gclosure_in, None)
 
@@ -1367,13 +1370,11 @@ class TestCallbacks(unittest.TestCase):
             return 5
         self.assertEqual(GIMarshallingTests.callback_return_value_only(cb), 5)
 
-    @unittest.expectedFailure
     def test_one_out_arg(self):
         def cb():
             return 5.5
         self.assertAlmostEqual(GIMarshallingTests.callback_one_out_parameter(cb), 5.5)
 
-    @unittest.expectedFailure
     def test_multiple_out_args(self):
         def cb():
             return (5.5, 42.0)
@@ -1381,7 +1382,6 @@ class TestCallbacks(unittest.TestCase):
         self.assertAlmostEqual(res[0], 5.5)
         self.assertAlmostEqual(res[1], 42.0)
 
-    @unittest.expectedFailure
     def test_return_and_one_out_arg(self):
         def cb():
             return (5, 42.0)
@@ -1389,7 +1389,6 @@ class TestCallbacks(unittest.TestCase):
         self.assertEqual(res[0], 5)
         self.assertAlmostEqual(res[1], 42.0)
 
-    @unittest.expectedFailure
     def test_return_and_multiple_out_arg(self):
         def cb():
             return (5, 42, -1000)
@@ -1476,6 +1475,45 @@ class TestEnum(unittest.TestCase):
         self.assertRaises(AttributeError, getattr, GIMarshallingTests.Enum, "SECONDVALUE1")
         self.assertTrue(hasattr(GIMarshallingTests.Enum, "VALUE1"))
         self.assertRaises(AttributeError, getattr, GIMarshallingTests.SecondEnum, "VALUE1")
+
+    def test_enum_gtype_name_is_namespaced(self):
+        self.assertEqual(GIMarshallingTests.Enum.__gtype__.name,
+                         'PyGIMarshallingTestsEnum')
+
+    def test_enum_double_registration_error(self):
+        # a warning is printed for double registration and pygobject will
+        # also raise a RuntimeError.
+        old_mask = GLib.log_set_always_fatal(GLib.LogLevelFlags.LEVEL_ERROR)
+        try:
+            self.assertRaises(RuntimeError,
+                              gi._gi.enum_register_new_gtype_and_add,
+                              GIMarshallingTests.Enum.__info__)
+        finally:
+            GLib.log_set_always_fatal(old_mask)
+
+    def test_enum_add_type_error(self):
+        self.assertRaises(TypeError,
+                          gi._gi.enum_add,
+                          GIMarshallingTests.NoTypeFlags.__gtype__)
+
+
+@unittest.skipUnless(hasattr(GIMarshallingTests.Object, 'vfunc_return_enum'),
+                     'GIMarshallingTests too old')
+class TestEnumVFuncResults(unittest.TestCase):
+    class EnumTester(GIMarshallingTests.Object):
+        def do_vfunc_return_enum(self):
+            return GIMarshallingTests.Enum.VALUE2
+
+        def do_vfunc_out_enum(self):
+            return GIMarshallingTests.Enum.VALUE3
+
+    def test_vfunc_return_enum(self):
+        tester = self.EnumTester()
+        self.assertEqual(tester.vfunc_return_enum(), GIMarshallingTests.Enum.VALUE2)
+
+    def test_vfunc_out_enum(self):
+        tester = self.EnumTester()
+        self.assertEqual(tester.vfunc_out_enum(), GIMarshallingTests.Enum.VALUE3)
 
 
 class TestGEnum(unittest.TestCase):
@@ -1609,6 +1647,21 @@ class TestNoTypeFlags(unittest.TestCase):
         self.assertTrue(isinstance(flags, GIMarshallingTests.NoTypeFlags))
         self.assertEqual(flags, GIMarshallingTests.NoTypeFlags.VALUE1)
 
+    def test_flags_gtype_name_is_namespaced(self):
+        self.assertEqual(GIMarshallingTests.NoTypeFlags.__gtype__.name,
+                         'PyGIMarshallingTestsNoTypeFlags')
+
+    def test_flags_double_registration_error(self):
+        # a warning is printed for double registration and pygobject will
+        # also raise a RuntimeError.
+        old_mask = GLib.log_set_always_fatal(GLib.LogLevelFlags.LEVEL_ERROR)
+        try:
+            self.assertRaises(RuntimeError,
+                              gi._gi.flags_register_new_gtype_and_add,
+                              GIMarshallingTests.NoTypeFlags.__info__)
+        finally:
+            GLib.log_set_always_fatal(old_mask)
+
 
 class TestStructure(unittest.TestCase):
 
@@ -1704,6 +1757,8 @@ class TestStructure(unittest.TestCase):
 
         del struct
 
+    @unittest.skipUnless(hasattr(GIMarshallingTests.BoxedStruct, 'string_'),
+                         'too old gobject-introspection')
     def test_boxed_struct(self):
         self.assertTrue(issubclass(GIMarshallingTests.BoxedStruct, GObject.GBoxed))
 
@@ -1711,30 +1766,44 @@ class TestStructure(unittest.TestCase):
         self.assertTrue(isinstance(struct, GIMarshallingTests.BoxedStruct))
 
         self.assertEqual(0, struct.long_)
+        self.assertEqual(None, struct.string_)
         self.assertEqual([], struct.g_strv)
 
         del struct
 
+    @unittest.skipUnless(hasattr(GIMarshallingTests.BoxedStruct, 'string_'),
+                         'too old gobject-introspection')
     def test_boxed_struct_new(self):
         struct = GIMarshallingTests.BoxedStruct.new()
         self.assertTrue(isinstance(struct, GIMarshallingTests.BoxedStruct))
+        self.assertEqual(struct.long_, 0)
+        self.assertEqual(struct.string_, None)
 
         del struct
 
+    @unittest.skipUnless(hasattr(GIMarshallingTests.BoxedStruct, 'string_'),
+                         'too old gobject-introspection')
     def test_boxed_struct_copy(self):
         struct = GIMarshallingTests.BoxedStruct()
+        struct.long_ = 42
+        struct.string_ = 'hello'
 
         new_struct = struct.copy()
         self.assertTrue(isinstance(new_struct, GIMarshallingTests.BoxedStruct))
+        self.assertEqual(new_struct.long_, 42)
+        self.assertEqual(new_struct.string_, 'hello')
 
         del new_struct
         del struct
 
+    @unittest.skipUnless(hasattr(GIMarshallingTests.BoxedStruct, 'string_'),
+                         'too old gobject-introspection')
     def test_boxed_struct_return(self):
         struct = GIMarshallingTests.boxed_struct_returnv()
 
         self.assertTrue(isinstance(struct, GIMarshallingTests.BoxedStruct))
         self.assertEqual(42, struct.long_)
+        self.assertEqual('hello', struct.string_)
         self.assertEqual(['0', '1', '2'], struct.g_strv)
 
         del struct
@@ -1766,6 +1835,14 @@ class TestStructure(unittest.TestCase):
 
         del in_struct
         del out_struct
+
+    def test_struct_field_assignment(self):
+        struct = GIMarshallingTests.BoxedStruct()
+
+        struct.long_ = 42
+        struct.string_ = 'hello'
+        self.assertEqual(struct.long_, 42)
+        self.assertEqual(struct.string_, 'hello')
 
     def test_union(self):
         union = GIMarshallingTests.Union()
@@ -2172,20 +2249,7 @@ class TestMultiOutputArgs(unittest.TestCase):
         self.assertEqual((6, 7), GIMarshallingTests.int_return_out())
 
 
-class TestGErrorException(unittest.TestCase):
-    def test_gerror_exception(self):
-        self.assertRaises(GObject.GError, GIMarshallingTests.gerror)
-        try:
-            GIMarshallingTests.gerror()
-        except Exception:
-            etype, e = sys.exc_info()[:2]
-            self.assertEqual(e.domain, GIMarshallingTests.CONSTANT_GERROR_DOMAIN)
-            self.assertEqual(e.code, GIMarshallingTests.CONSTANT_GERROR_CODE)
-            self.assertEqual(e.message, GIMarshallingTests.CONSTANT_GERROR_MESSAGE)
-
-
 # Interface
-
 
 class TestInterfaces(unittest.TestCase):
 
@@ -2396,19 +2460,17 @@ class TestDir(unittest.TestCase):
         # self.assertTrue('DoNotImportDummyTests' in list)
 
 
-class TestGErrorArrayInCrash(unittest.TestCase):
-    # Previously there was a bug in invoke, in which C arrays were unwrapped
-    # from inside GArrays to be passed to the C function. But when a GError was
-    # set, invoke would attempt to free the C array as if it were a GArray.
-    # This crash is only for C arrays. It does not happen for C functions which
-    # take in GArrays. See https://bugzilla.gnome.org/show_bug.cgi?id=642708
-    def test_gerror_array_in_crash(self):
+class TestGError(unittest.TestCase):
+    def test_array_in_crash(self):
+        # Previously there was a bug in invoke, in which C arrays were unwrapped
+        # from inside GArrays to be passed to the C function. But when a GError was
+        # set, invoke would attempt to free the C array as if it were a GArray.
+        # This crash is only for C arrays. It does not happen for C functions which
+        # take in GArrays. See https://bugzilla.gnome.org/show_bug.cgi?id=642708
         self.assertRaises(GObject.GError, GIMarshallingTests.gerror_array_in, [1, 2, 3])
 
-
-class TestGErrorOut(unittest.TestCase):
-    # See https://bugzilla.gnome.org/show_bug.cgi?id=666098
-    def test_gerror_out(self):
+    def test_out(self):
+        # See https://bugzilla.gnome.org/show_bug.cgi?id=666098
         error, debug = GIMarshallingTests.gerror_out()
 
         self.assertIsInstance(error, GObject.GError)
@@ -2417,10 +2479,8 @@ class TestGErrorOut(unittest.TestCase):
         self.assertEqual(error.message, GIMarshallingTests.CONSTANT_GERROR_MESSAGE)
         self.assertEqual(debug, GIMarshallingTests.CONSTANT_GERROR_DEBUG_MESSAGE)
 
-
-class TestGErrorOutTransferNone(unittest.TestCase):
-    # See https://bugzilla.gnome.org/show_bug.cgi?id=666098
-    def test_gerror_out_transfer_none(self):
+    def test_out_transfer_none(self):
+        # See https://bugzilla.gnome.org/show_bug.cgi?id=666098
         error, debug = GIMarshallingTests.gerror_out_transfer_none()
 
         self.assertIsInstance(error, GObject.GError)
@@ -2429,10 +2489,8 @@ class TestGErrorOutTransferNone(unittest.TestCase):
         self.assertEqual(error.message, GIMarshallingTests.CONSTANT_GERROR_MESSAGE)
         self.assertEqual(GIMarshallingTests.CONSTANT_GERROR_DEBUG_MESSAGE, debug)
 
-
-class TestGErrorReturn(unittest.TestCase):
-    # See https://bugzilla.gnome.org/show_bug.cgi?id=666098
-    def test_return_gerror(self):
+    def test_return(self):
+        # See https://bugzilla.gnome.org/show_bug.cgi?id=666098
         error = GIMarshallingTests.gerror_return()
 
         self.assertIsInstance(error, GObject.GError)
@@ -2440,8 +2498,27 @@ class TestGErrorReturn(unittest.TestCase):
         self.assertEqual(error.code, GIMarshallingTests.CONSTANT_GERROR_CODE)
         self.assertEqual(error.message, GIMarshallingTests.CONSTANT_GERROR_MESSAGE)
 
+    def test_exception(self):
+        self.assertRaises(GObject.GError, GIMarshallingTests.gerror)
+        try:
+            GIMarshallingTests.gerror()
+        except Exception:
+            etype, e = sys.exc_info()[:2]
+            self.assertEqual(e.domain, GIMarshallingTests.CONSTANT_GERROR_DOMAIN)
+            self.assertEqual(e.code, GIMarshallingTests.CONSTANT_GERROR_CODE)
+            self.assertEqual(e.message, GIMarshallingTests.CONSTANT_GERROR_MESSAGE)
+
 
 class TestParamSpec(unittest.TestCase):
+    # https://bugzilla.gnome.org/show_bug.cgi?id=682355
+    @unittest.skipUnless(hasattr(GIMarshallingTests, 'param_spec_in_bool'),
+                         'too old gobject-introspection')
+    @unittest.expectedFailure
+    def test_param_spec_in_bool(self):
+        ps = GObject.param_spec_boolean('mybool', 'test-bool', 'boolblurb',
+                                        True, GObject.ParamFlags.READABLE)
+        GIMarshallingTests.param_spec_in_bool(ps)
+
     def test_param_spec_return(self):
         obj = GIMarshallingTests.param_spec_return()
         self.assertEqual(obj.name, 'test-param')
@@ -2528,18 +2605,10 @@ class TestPropertiesObject(unittest.TestCase):
         obj = GIMarshallingTests.PropertiesObject(some_boolean=True)
         self.assertEqual(obj.props.some_boolean, True)
 
-    @unittest.expectedFailure
     def test_char(self):
-        # gobject-introspection thinks it has a guint8 type tag, which is
-        # wrong; this will raise an assertion critical which we need to ignore
-        old_mask = GLib.log_set_always_fatal(
-            GLib.LogLevelFlags.LEVEL_WARNING | GLib.LogLevelFlags.LEVEL_ERROR)
-        try:
-            self.assertEqual(self.obj.props.some_char, 0)
-            self.obj.props.some_char = GObject.G_MAXINT8
-            self.assertEqual(self.obj.props.some_char, GObject.G_MAXINT8)
-        finally:
-            GLib.log_set_always_fatal(old_mask)
+        self.assertEqual(self.obj.props.some_char, 0)
+        self.obj.props.some_char = GObject.G_MAXINT8
+        self.assertEqual(self.obj.props.some_char, GObject.G_MAXINT8)
 
         obj = GIMarshallingTests.PropertiesObject(some_char=-42)
         self.assertEqual(obj.props.some_char, -42)
@@ -2686,6 +2755,27 @@ class TestPropertiesObject(unittest.TestCase):
         obj = GIMarshallingTests.PropertiesObject(some_boxed_struct=struct1)
         self.assertEqual(obj.props.some_boxed_struct.long_, 1)
 
+    @unittest.skipUnless(hasattr(GIMarshallingTests.PropertiesObject, 'some_boxed_glist'),
+                         'too old gobject-introspection')
+    def test_boxed_glist(self):
+        self.assertEqual(self.obj.props.some_boxed_glist, [])
+
+        l = [GObject.G_MININT, 42, GObject.G_MAXINT]
+        self.obj.props.some_boxed_glist = l
+        self.assertEqual(self.obj.props.some_boxed_glist, l)
+        self.obj.props.some_boxed_glist = []
+        self.assertEqual(self.obj.props.some_boxed_glist, [])
+
+        self.assertRaises(TypeError, setattr, self.obj.props, 'some_boxed_glist', 1)
+        self.assertRaises(TypeError, setattr, self.obj.props, 'some_boxed_glist', 'foo')
+        self.assertRaises(TypeError, setattr, self.obj.props, 'some_boxed_glist', ['a'])
+
+    @unittest.expectedFailure
+    def test_boxed_glist_ctor(self):
+        l = [GObject.G_MININT, 42, GObject.G_MAXINT]
+        obj = GIMarshallingTests.PropertiesObject(some_boxed_glist=l)
+        self.assertEqual(obj.props.some_boxed_glist, l)
+
     @unittest.skipUnless(hasattr(GIMarshallingTests.PropertiesObject, 'some_variant'),
                          'too old gobject-introspection')
     def test_variant(self):
@@ -2707,6 +2797,12 @@ class TestPropertiesObject(unittest.TestCase):
 
         self.assertEqual(obj.props.some_variant.get_type_string(), 'b')
         self.assertEqual(obj.props.some_variant.get_boolean(), True)
+
+    def test_setting_several_properties(self):
+        obj = GIMarshallingTests.PropertiesObject()
+        obj.set_properties(some_uchar=54, some_int=42)
+        self.assertEqual(42, obj.props.some_int)
+        self.assertEqual(54, obj.props.some_uchar)
 
 
 class TestKeywords(unittest.TestCase):
@@ -2824,3 +2920,12 @@ class TestSignatureArgs(unittest.TestCase):
     def test_overridden_doc_is_not_clobbered(self):
         self.assertEqual(GIMarshallingTests.OverridesObject.method.__doc__,
                          'Overridden doc string.')
+
+
+class TestDeprecation(unittest.TestCase):
+    def test_method(self):
+        d = GLib.Date.new()
+        with warnings.catch_warnings(record=True) as warn:
+            warnings.simplefilter('always')
+            d.set_time(1)
+            self.assertTrue(issubclass(warn[0].category, DeprecationWarning))

@@ -1,3 +1,143 @@
+3.8.0   25-Mar-2013
+	- tests: Fix incorrect assumption when testing pyglib version
+	  (Simon Feltman)
+
+3.7.92  18-Mar-2013
+	- Fix stack smasher when marshaling enums as a vfunc return value
+	  (Simon Feltman) (#637832)
+	- Change base class of PyGIDeprecationWarning based on minor version
+	  (Simon Feltman) (#696011)
+	- autogen.sh: Source gnome-autogen to fix out of source builddir (Alban
+	  Browaeys) (#694889)
+        - pygtkcompat: Make gdk.Window.get_geometry return tuple of 5
+	  (Simon Feltman)
+        - pygtkcompat: Initialize hint to zero in set_geometry_hints
+	  (Simon Feltman)
+        - Remove incorrect bounds check with property helper flags
+	  (Simon Feltman)
+	- Fix crash when setting property of type object to an incorrect type
+	  (Simon Feltman) (#695420)
+	- Give more informative error when setting property to incorrect type
+	  (Simon Feltman) (#695420)
+
+3.7.91.1 05-Mar-2013
+        - Revert "Drop gi.overrides.overridefunc()" (Martin Pitt) (#695199)
+
+3.7.91  04-Mar-2013
+        - Fix many memory leaks (#675726, #693402, #691501, #510511, #691501,
+	  #672224, and several more which are detected by our test suite)
+	  (Martin Pitt)
+        - Dot not clobber original Gdk/Gtk functions with overrides
+	  (Martin Pitt) (#686835)
+	- Optimize GValue.get/set_value by setting GValue.g_type to a local
+	  (Simon Feltman) (#694857)
+        - Run tests with G_SLICE=debug_blocks (Martin Pitt) (#691501)
+	- Add override helper for stripping boolean returns (Martin Pitt)
+	  (#694431)
+	- Drop obsolete pygobject_register_sinkfunc() declaration (Martin Pitt)
+	  (#639849)
+	- Fix marshalling of C arrays with explicit length in signal arguments
+	  (Martin Pitt) (#662241)
+	- Fix signedness, overflow checking, and 32 bit overflow of GFlags
+	  (Martin Pitt) (#693121)
+	- gi/pygi-marshal-from-py.c: Fix build on Visual C++ (Chun-wei Fan)
+	  (#692856)
+	- Raise DeprecationWarning on deprecated callables (Martin Pitt)
+	  (#665084)
+	- pygtkcompat: Add Widget.window, scroll_to_mark, and window methods
+	  (Simon Feltman) (#694067)
+	- pygtkcompat: Add Gtk.Window.set_geometry_hints which accepts keyword
+	  arguments (Simon Feltman) (#694067)
+        - Ship pygobject.doap for autogen.sh (Martin Pitt) (#694591)
+	- Fix crashes in various GObject signal handler functions
+	  (Simon Feltman) (#633927)
+	- pygi-closure: Protect the GSList prepend with the GIL (Olivier Crête)
+	  (#684060)
+	- generictreemodel: Fix bad default return type for get_column_type
+	  (Simon Feltman)
+
+3.7.90  19-Feb-2013
+	- overrides: Fix inconsistencies with drag and drop target list API
+	  (Simon Feltman) (#680640)
+	- pygtkcompat: Add pygtk compatible GenericTreeModel implementation
+	  (Simon Feltman) (#682933)
+	- overrides: Add support for iterables besides tuples for TreePath
+	  creation (Simon Feltman) (#682933)
+	- Prefix __module__ attribute of function objects with gi.repository
+	  (Niklas Koep) (#693839)
+	- configure.ac: only enable code coverage when available, to fix
+	  autogen.sh with older gnome-commons (Jonathan Ballet) (#693328)
+	- Correctly set properties on object with statically defined properties
+	  (Jonathan Ballet) (#693618)
+	- autogen.sh: Use gnome-autogen.sh (Martin Pitt) (#693328)
+	- Fix reference leaks with transient floating objects (Simon Feltman)
+	  (#687522)
+
+3.7.5.1 05-Feb-2013
+        - Fix ABI break with pygobject.h from 3.7.5 (Simon Feltman) (#675726)
+
+3.7.5   04-Feb-2013
+	- Move various signal methods from static bindings to GI
+	  (Simon Feltman) (#692918)
+	- GLib overrides: Support unpacking 'maybe' variants (Paolo Borelli)
+	  (#693032)
+	- Fix ref count leak when creating pygobject wrappers for input args
+	  (Mike Gorse) (#675726)
+	- Prefix names of typeless enums and flags for GType registration
+	  (Simon Feltman) (#692515)
+	- Fix compilation with non-C99 compilers such as Visual C++
+	  (Chun-wei Fan) (#692856)
+        - gi/overrides/Glib.py: Fix running on Windows/non-Unix (Chun-wei Fan)
+	- Do not immediately initialize Gdk and Gtk on import (Martin Pitt)
+	  (#692300)
+        - Accept ±inf and NaN as float and double values (Martin Pitt) (#692381)
+        - Fix repr() of GLib.Variant (Martin Pitt)
+        - Fix gtk-demo for Python 3 (Martin Pitt)
+        - Define GObject.TYPE_VALUE gtype constant (Martin Pitt)
+	- gobject: Go through introspection on property setting (Olivier Crête)
+	  (#684062)
+	- Clean up caller-allocated GValues and their memory (Mike Gorse)
+	  (#691820)
+        - Use GNOME_COMPILE_WARNINGS from gnome-common (Martin Pitt)
+
+3.7.4   14-Jan-2013
+        - Allow setting values through GtkTreeModelFilter (Simonas Kazlauskas)
+          (#689624)
+        - Support GParamSpec signal arguments from Python (Martin Pitt)
+          (#683099)
+        - pygobject_emit(): Fix cleanup on error (Martin Pitt)
+        - Add signal emission methods to TreeModel which coerce the path
+          argument (Simon Feltman) (#682933)
+        - Add override for GValue (Bastian Winkler) (#677473)
+        - Mark caller-allocated boxed structures as having a slice allocated
+          (Mike Gorse) (#699501)
+        - pygi-property: Support boxed GSList/GList types (Olivier Crête)
+          (#684059)
+        - tests: Add missing backwards compat methods for Python 2.6
+          (Martin Pitt) (#691646)
+        - Allow setting TreeModel values to None (Simon Feltman) (#684094)
+        - Set clean-up handler for marshalled arrays (Mike Gorse) (#691509)
+        - Support setting string fields in structs (Vadim Rutkovsky) (#678401)
+        - Permit plain integers for "gchar" values (Martin Pitt)
+        - Allow single byte values for int8 types (Martin Pitt) (#691524)
+        - Fix invalid memory access handling errors when registering an enum
+          type (Mike Gorse)
+        - Fix (out) arguments in callbacks (Martin Pitt)
+        - Fix C to Python marshalling of struct pointer arrays (Martin Pitt)
+        - Don't let Property.setter() method names define property names
+          (Martin Pitt) (#688971)
+        - Use g-i stack allocation API (Martin Pitt) (#615982)
+        - pyg_value_from_pyobject: support GArray (Ray Strode) (#690514)
+        - Fix obsolete automake macros (Marko Lindqvist) (#691101)
+        - Change dynamic enum and flag gtype creation to use namespaced naming
+          (Simon Feltman) (#690455)
+        - Fix Gtk.UIManager.add_ui_from_string() override for non-ASCII chars
+          (Jonathan Ballet) (#690329)
+        - Don't dup strings before passing them to type registration functions
+          (Mike Gorse) (#690532)
+        - Fix marshalling of arrays of boxed struct values (Carlos Garnacho)
+          (#656312)
+
 3.7.3   17-Dec-2012
 	- Add support for caller-allocated GArray out arguments (Martin Pitt)
 	  (#690041)

@@ -7,9 +7,6 @@
 
 #include <pyglib-python-compat.h>
 
-static PyTypeObject *_PyGObject_Type;
-#define PyGObject_Type (*_PyGObject_Type)
-
 static PyObject * _wrap_TestInterface__do_iface_method(PyObject *cls,
 						       PyObject *args,
 						       PyObject *kwargs);
@@ -402,6 +399,15 @@ test_gvalue_ret_callback (GObject *object, GType type)
   return ret;
 }
 
+static GParamSpec *
+test_paramspec_in_callback (GObject *object, GParamSpec *p)
+{
+  g_return_val_if_fail (G_IS_OBJECT (object), NULL);
+  g_return_val_if_fail (G_IS_PARAM_SPEC (p), NULL);
+
+  return p;
+}
+
 static void
 connectcallbacks (GObject *object)
 {
@@ -459,6 +465,10 @@ connectcallbacks (GObject *object)
   g_signal_connect (G_OBJECT (object),
                     "test_gvalue_ret",
                     G_CALLBACK (test_gvalue_ret_callback), 
+                    NULL);
+  g_signal_connect (G_OBJECT (object),
+                    "test_paramspec_in",
+                    G_CALLBACK (test_paramspec_in_callback), 
                     NULL);
 }
 
@@ -530,7 +540,6 @@ _wrap_test_gerror_exception(PyObject *self, PyObject *args)
         return NULL;
     }	    
 
-    Py_DECREF(py_method);
     Py_DECREF(py_args);
     Py_DECREF(py_ret);
 
@@ -606,16 +615,7 @@ PYGLIB_MODULE_START(testhelper, "testhelper")
 
   d = PyModule_GetDict(module);
 
-  if ((m = PyImport_ImportModule("gi._gobject._gobject")) != NULL) {
-    PyObject *moddict = PyModule_GetDict(m);
-    
-    _PyGObject_Type = (PyTypeObject *)PyDict_GetItemString(moddict, "GObject");
-    if (_PyGObject_Type == NULL) {
-      PyErr_SetString(PyExc_ImportError,
-		      "cannot import name GObject from gobject");
-      return PYGLIB_MODULE_ERROR_RETURN;
-    }
-  } else {
+  if ((m = PyImport_ImportModule("gi._gobject._gobject")) == NULL) {
     PyErr_SetString(PyExc_ImportError,
 		    "could not import gobject");
     return PYGLIB_MODULE_ERROR_RETURN;

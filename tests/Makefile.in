@@ -243,6 +243,7 @@ SHELL = @SHELL@
 STRIP = @STRIP@
 THREADING_CFLAGS = @THREADING_CFLAGS@
 VERSION = @VERSION@
+WARN_CFLAGS = @WARN_CFLAGS@
 abs_builddir = @abs_builddir@
 abs_srcdir = @abs_srcdir@
 abs_top_builddir = @abs_top_builddir@
@@ -330,6 +331,7 @@ EXTRA_DIST = \
 	test-unknown.h \
 	te_ST@nouppera \
 	org.gnome.test.gschema.xml \
+	test_gio.py \
 	test_glib.py \
 	test_gobject.py \
 	test_gtype.py \
@@ -337,6 +339,7 @@ EXTRA_DIST = \
 	test_internal_api.py \
 	test_iochannel.py \
 	test_mainloop.py \
+	test_object_marshaling.py \
 	test_option.py \
 	test_properties.py \
 	test_signal.py \
@@ -347,12 +350,12 @@ EXTRA_DIST = \
 	test_gi.py \
 	test_gdbus.py \
 	test_overrides.py \
-	test_overrides_gio.py \
 	test_overrides_glib.py \
 	test_overrides_pango.py \
 	test_overrides_gdk.py \
 	test_overrides_gtk.py \
 	test_atoms.py \
+	test_generictreemodel.py \
 	compat_test_pygtk.py \
 	gi/__init__.py \
 	gi/overrides/__init__.py \
@@ -367,6 +370,7 @@ RUN_TESTS_ENV_VARS = \
 	XDG_DATA_DIRS=$$XDG_DATA_DIRS:/usr/share \
 	MALLOC_PERTURB_=85 \
 	MALLOC_CHECK_=3 \
+	G_SLICE=debug-blocks \
 	TESTS_BUILDDIR=$(builddir)
 
 all: all-am
@@ -758,7 +762,7 @@ check-local: $(LTLIBRARIES:.la=.so) $(test_typelibs) gschemas.compiled
 		if type pep8 >/dev/null 2>&1; then pep8 --ignore=E501,E123,E124 --repeat --show-source $(top_srcdir); else echo "skipped, pep8 not installed"; fi; \
 	fi
 	export `$(DBUS_LAUNCH)` && \
-	$(RUN_TESTS_ENV_VARS) $(EXEC_NAME) $(PYTHON) -Wd -Werror::PendingDeprecationWarning -Werror::DeprecationWarning -Werror::RuntimeWarning $(srcdir)/runtests.py; rc=$$?; \
+	$(RUN_TESTS_ENV_VARS) $(EXEC_NAME) $(PYTHON) -Wd $(srcdir)/runtests.py; rc=$$?; \
 	[ "$$rc" -ne 0 ] || [ -n "$$TEST_NAMES" ] || { TEST_NAMES=compat_test_pygtk $(RUN_TESTS_ENV_VARS) $(EXEC_NAME) $(PYTHON) -Wd -Werror::PendingDeprecationWarning -Werror::DeprecationWarning -Werror::RuntimeWarning $(srcdir)/runtests.py; rc=$$?; }; \
 	kill $$DBUS_SESSION_BUS_PID; \
 	exit $$rc
@@ -770,7 +774,7 @@ check.nemiver:
 	EXEC_NAME="nemiver" $(MAKE) check
 
 check.valgrind:
-	EXEC_NAME="valgrind --leak-check=full --show-possibly-lost=no --suppressions=python.supp" G_SLICE=always-malloc G_DEBUG=gc-friendly $(MAKE) check
+	EXEC_NAME="valgrind --leak-check=full --show-possibly-lost=no --suppressions=python.supp" G_DEBUG=gc-friendly $(MAKE) check
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.
