@@ -12,6 +12,7 @@ Version:        3.8.0
 Release:        0
 Url:            http://ftp.gnome.org/pub/GNOME/sources/pygobject/
 Source:         http://download.gnome.org/sources/pygobject/3.8/%{_name}-%{version}.tar.xz
+Source1001: 	python-gobject.manifest
 BuildRequires:  fdupes
 BuildRequires:  glib2-devel >= 2.31.0
 BuildRequires:  gobject-introspection-devel >=  1.34.2
@@ -72,6 +73,7 @@ addon libraries such as pygtk.
 
 %prep
 %setup -q -n %{_name}-%{version}
+cp %{SOURCE1001} .
 
 %build
 %configure
@@ -87,6 +89,7 @@ rm examples/Makefile*
 %postun -n libpyglib-gi-python -p /sbin/ldconfig
 
 %files
+%manifest %{name}.manifest
 %defattr(-,root,root)
 %license COPYING
 %{local_py_sitedir}/gi/
@@ -97,19 +100,23 @@ rm examples/Makefile*
 %exclude %{local_py_sitedir}/gi/pygtkcompat.py
 
 %files -n libpyglib-gi-python
+%manifest %{name}.manifest
 %defattr(-, root, root)
 %{_libdir}/libpyglib-gi-2.0-python%{local_py_suffix}.so.0*
 
 %files cairo
+%manifest %{name}.manifest
 %defattr(-,root,root)
 %{local_py_sitedir}/gi/_gi_cairo.so
 
 %files pygtkcompat
+%manifest %{name}.manifest
 %defattr(-,root,root)
 #%{local_py_sitedir}/gi/pygtkcompat.py
 %{local_py_sitedir}/pygtkcompat
 
 %files devel
+%manifest %{name}.manifest
 %defattr(-,root,root)
 %{_includedir}/pygobject-3.0/
 %{_libdir}/*.so
