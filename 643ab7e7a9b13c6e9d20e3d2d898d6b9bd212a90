@@ -1,0 +1,8 @@
+Change-Id: I643ab7e7a9b13c6e9d20e3d2d898d6b9bd212a90
+Code-Review+2: Ryan Ware <ware@linux.intel.com>
+Verified+1: Ryan Ware <ware@linux.intel.com>
+Submitted-by: Ryan Ware <ware@linux.intel.com>
+Submitted-at: Mon, 08 Jul 2013 09:39:44 -0700
+Reviewed-on: https://review.tizen.org/gerrit/4867
+Project: platform/upstream/python-gobject
+Branch: refs/heads/tizen
